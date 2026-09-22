@@ -108,7 +108,7 @@ EXEC_MODE_CATALOG = (
     {"id": "plan", "label": "计划模式", "hint": "编辑前先出计划。", "icon": "bulb"},
     {"id": "confirm_writes", "label": "变更前确认", "hint": "改文件前先问我。", "icon": "hand"},
     {"id": "auto_workspace", "label": "自动编辑", "hint": "自动编辑文件。", "icon": "shield"},
-    {"id": "full_access", "label": "完全访问", "hint": "减少确认次数。", "icon": "shield"},
+    {"id": "full_access", "label": "完全访问", "hint": "减少确认次数。", "icon": "unlock"},
 )
 
 

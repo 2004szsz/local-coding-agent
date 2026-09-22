@@ -1930,7 +1930,7 @@ const EXEC_MODE_FALLBACK = [
   { id: "plan", labelKey: "exec.plan", hintKey: "exec.planHint", icon: "bulb" },
   { id: "confirm_writes", labelKey: "exec.confirm", hintKey: "exec.confirmHint", icon: "hand" },
   { id: "auto_workspace", labelKey: "exec.auto", hintKey: "exec.autoHint", icon: "shield" },
-  { id: "full_access", labelKey: "exec.full", hintKey: "exec.fullHint", icon: "shield" },
+  { id: "full_access", labelKey: "exec.full", hintKey: "exec.fullHint", icon: "unlock" },
 ];
 
 function execModeCatalog() {
@@ -1975,7 +1975,10 @@ function updateExecModeUI() {
   if (label) label.textContent = meta.label;
   if (icon) icon.setAttribute("href", `#i-${meta.icon || "shield"}`);
   const btn = $("#btn-exec-mode");
-  if (btn) btn.title = meta.hint || meta.label;
+  if (btn) {
+    btn.title = meta.hint || meta.label;
+    btn.dataset.mode = meta.id || "auto_workspace";
+  }
 }
 
 let execModeMenu = null;
@@ -2022,12 +2025,16 @@ function openExecModeMenu() {
     const active = item.id === state.execMode;
     return `
       <button type="button" class="exec-mode-item ${active ? "active" : ""}" data-mode="${escapeHtml(item.id)}">
-        <svg class="exec-ico"><use href="#i-${escapeHtml(item.icon || "shield")}"/></svg>
+        <span class="exec-ico-well" aria-hidden="true">
+          <svg class="exec-ico"><use href="#i-${escapeHtml(item.icon || "shield")}"/></svg>
+        </span>
         <span class="exec-copy">
           <span class="exec-title">${escapeHtml(item.label)}</span>
           <span class="exec-hint">${escapeHtml(item.hint || "")}</span>
         </span>
-        <svg class="exec-check"><use href="#i-check"/></svg>
+        <span class="exec-check-well" aria-hidden="true">
+          <svg class="exec-check"><use href="#i-check"/></svg>
+        </span>
       </button>`;
   }).join("");
   document.body.appendChild(menu);
