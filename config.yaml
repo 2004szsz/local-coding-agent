@@ -1,0 +1,167 @@
+# =====================================================================
+# 本地编码智能体 - 主配置文件
+# 修改本文件后重启服务生效。带 [必填] 的项目请按实际环境填写。
+# =====================================================================
+
+server:
+  host: "127.0.0.1"          # 监听地址【安全警告】请勿改为 0.0.0.0 暴露到公网
+  port: 8000                 # 监听端口
+  reload: false              # 开发模式热重载（dev 环境自动开启）
+  workspace_root: "./workspaces/demo"  # 文件操作锁定的工作空间根目录（自动创建）
+
+# ---------------- LLM 大模型配置 ----------------
+# 优先使用 Web「设置 → 模型设置」中的供应商（data/model_registry.json）。
+# 本节仅作无注册表时的兜底；统一走 OpenAI 兼容协议。
+llm:
+  provider: "custom"
+  base_url: ""
+  api_key: ""
+  model: ""
+  temperature: 0.2
+  max_tokens: 4096
+  timeout: 120
+  stream: true
+
+  embedding:
+    enabled: false
+    base_url: ""
+    api_key: ""
+    model: ""
+    timeout: 60
+    fallback_hash: true
+
+# ---------------- Agent ----------------
+# 角色、技能、工具、框架和提示词在 agents/agent.yaml 与 prompts/。
+# 临时改框架可设环境变量 AGENT_FRAMEWORK（见 .env.example）。
+agent: {}
+
+# ---------------- 模块协同（规则见 config/module-rules.yaml） ----------------
+modules:
+  auto_rag_index: true          # 知识库待索引时后台自动增量索引
+  auto_prompt_match: true       # 提示词模板后台自动匹配（无需前台下拉）
+  prompt_match_interval_seconds: 15  # 模型变更轮询兜底间隔
+  status_poll_seconds: 30       # 前端链路状态轮询间隔
+
+# ---------------- RAG 源码知识库 ----------------
+rag:
+  enabled: true
+  persist_dir: "./data/chroma"   # Chroma 持久化目录
+  collection: "code_knowledge"
+  chunk_size: 1200               # 切片目标字符数
+  chunk_overlap: 150             # 切片重叠字符数
+  max_file_size_kb: 512          # 跳过超过该大小的单文件
+  use_tree_sitter: true          # 优先 tree-sitter 解析，失败自动降级
+  # 参与索引的文件后缀
+  include_ext:
+    - ".py"
+    - ".js"
+    - ".ts"
+    - ".jsx"
+    - ".tsx"
+    - ".java"
+    - ".go"
+    - ".c"
+    - ".h"
+    - ".cpp"
+    - ".html"
+    - ".css"
+    - ".json"
+    - ".yaml"
+    - ".yml"
+    - ".md"
+  # 索引时忽略的目录/文件（glob 模式）
+  ignore:
+    - "**/.git/**"
+    - "**/__pycache__/**"
+    - "**/node_modules/**"
+    - "**/.venv/**"
+    - "**/venv/**"
+    - "**/dist/**"
+    - "**/build/**"
+    - "**/data/chroma/**"
+    - "**/.workbuddy/**"      # 人工笔记目录，不参与 Agent / RAG 记忆
+
+# ---------------- 执行器：沙箱与终端 ----------------
+executor:
+  timeout_seconds: 10         # run_python_code（L2 沙箱）单次执行超时，子进程级强杀
+  max_result_chars: 20000     # stdout/stderr 回传最大字符数（超出截断）
+  command_timeout_seconds: 60 # 工作区命令（L3）默认超时，上限 120
+                              # 用于自研 state_loop 运行时的 run_command，见
+                              # docs/agent-runtime-architecture.md
+
+# ---------------- 本地访问（工作区之外的本地文件与系统能力） ----------------
+# 默认关闭。开启后，fs_* 工具只会在 roots 显式授权的目录内工作；
+# 系统目录、凭据目录/文件、他人用户目录一律硬拒绝（不可配置放宽）。
+# 写入工具仅当存在 write: true 的根时注册，且执行前需要人工确认。
+# native_react / state_loop 都会走审批卡片；未确认 = 拒绝。
+# 方案见 docs/local-system-access-plan.md。
+local_access:
+  enabled: false
+  roots: []
+  # 启用示例（把用户桌面授权为只读根；写入把 write 改为 true）:
+  #   - name: desktop
+  #     path: "C:/Users/<你的用户名>/Desktop"
+  #     read: true
+  #     write: false
+  max_read_bytes: 524288      # fs_read 单文件上限 512KB，超出截断并明示
+  max_list_entries: 2000      # fs_list 条目上限
+  max_search_results: 50      # fs_search 命中上限
+  max_search_depth: 4         # fs_search 目录深度上限
+  rate_per_minute: 0          # 单根每分钟 resolve 上限，0 = 不限
+  trash_dir: "./data/.trash"  # fs_delete 隔离目录（永不真删）
+  audit_log: "./data/logs/fs_access.jsonl"   # 审计日志（每次 resolve 记账）
+
+# ---------------- 系统数据与受控系统动作 ----------------
+# psutil 缺失时只读组自动不注册，对话继续。动作组默认全部关闭。
+system:
+  enabled: false
+  expose: ["overview", "processes", "disks", "network", "env", "battery", "hardware"]
+  allow_actions: []           # 可选: notify / open_path / launch；默认空 = 全关
+  allow_apps: {}              # allow_actions 含 launch 时的白名单: {应用名: 可执行文件}
+
+# ---------------- 审批通道 ----------------
+# 高权限操作（L4 / confirm_writes）暂停等待人工确认；超时视为拒绝。
+# 每次决议（允许/拒绝/超时）追加一行审计记录。
+permissions:
+  timeout_seconds: 60
+  audit_log: "./data/logs/permissions.jsonl"
+
+# ---------------- MCP 客户端（原生扩展，随 state_loop 运行时启用） ----------------
+# 空列表 = 不连接任何 MCP server，不影响现有对话。
+mcp:
+  servers: []
+  # 示例：
+  # - name: docs
+  #   transport: stdio              # stdio | sse | streamable_http
+  #   command: ["uvx", "some-server"]
+  #   read_only: false              # true 表示该 server 的全部工具按只读（L0）处理
+
+# Agent 记忆三段：history.db（会话）/ chroma（RAG）/ preferences.json（用户偏好）。
+# sessions_dir 仅用于把旧 JSON 导入一次。偏好与 RAG / history 分离，上限 500 条或 10MB。
+# data/.workbuddy/memory/ 为人工笔记，不参与 Agent 记忆，设置页不展示。
+storage:
+  sessions_dir: "./data/sessions"
+  history_db: "./data/history.db"
+  max_messages_per_session: 500
+  preferences_path: "./data/memory/preferences.json"
+  preferences_max_items: 500
+  preferences_max_bytes: 10485760
+
+# ---------------- 可选框架的专属参数（切换后生效） ----------------
+frameworks:
+  autogen:
+    # 多角色编码团队：产品/架构/工程师/评审，按顺序协作
+    roles:
+      - name: "架构师"
+        description: "负责方案设计与任务拆解"
+      - name: "工程师"
+        description: "负责编写与修改代码"
+      - name: "评审员"
+        description: "负责审查代码正确性与安全性"
+  llamaindex:
+    retrieval_top_k: 5        # 基于代码结构检索的返回条数
+  crewai:
+    tasks:
+      - "需求分析"
+      - "编码实现"
+      - "测试验证"

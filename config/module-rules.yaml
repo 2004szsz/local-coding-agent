@@ -1,0 +1,73 @@
+# 模块协同规则清单 — 各功能模块通过此文件与 .cursor/rules/module-cohesion.mdc 联动
+version: 1
+rules_markdown: ".cursor/rules/module-cohesion.mdc"
+
+modules:
+  fs:
+    label: "文件"
+    chain_id: "fs"
+    paths:
+      - "tools/file_tools.py"
+      - "tools/fs_tools.py"
+      - "tools/workspace.py"
+      - "tools/search.py"
+    rule_sections:
+      - "工作区文件"
+      - "本地文件系统操控"
+    adapt: "verify_fs"
+    optimize_entry: "files"
+
+  rag:
+    label: "知识库"
+    chain_id: "rag"
+    paths:
+      - "memory/vector_store.py"
+      - "memory/indexer.py"
+      - "memory/splitter.py"
+      - "tools/rag_tools.py"
+    rule_sections:
+      - "RAG 模块"
+    adapt: "incremental_index"
+    auto_adapt: true
+    auto_adapt_interval_seconds: 90
+    optimize_entry: "rag-index"
+
+  agent:
+    label: "循环"
+    chain_id: "agent"
+    paths:
+      - "agents/native_react.py"
+      - "agents/state_loop/"
+      - "agents/registry.py"
+      - "agents/gate.py"
+    rule_sections:
+      - "Agent 循环与框架工厂"
+      - "事件流"
+    adapt: "verify_agent"
+    optimize_entry: "subagents"
+
+  access:
+    label: "完全访问"
+    chain_id: "access"
+    paths:
+      - "tools/fs_access.py"
+      - "agents/gate.py"
+      - "agents/state_loop/permissions.py"
+    rule_sections:
+      - "权限闸门"
+      - "本地文件系统操控"
+    adapt: "verify_access"
+    optimize_entry: "skills"
+
+  prompt_match:
+    label: "提示词模板"
+    chain_id: "prompt"
+    paths:
+      - "app/prompt_match/"
+      - "app/web/prompt-optimizer/"
+    rule_sections:
+      - "Agent 工具"
+    adapt: "auto_match_template"
+    auto_adapt: true
+    auto_adapt_interval_seconds: 15
+    optimize_entry: "prompt-optimizer"

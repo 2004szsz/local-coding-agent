@@ -1,0 +1,210 @@
+/* 3D 思考强度滑动条 — ChatGPT 式连续拖拽，分档变色 */
+
+.think3d {
+  --think-color: #34d399;
+  --think-glow: rgba(52, 211, 153, 0.45);
+  user-select: none;
+  width: 100%;
+}
+
+.think3d.compact { max-width: 280px; }
+
+.think3d-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.think3d-head .ic { width: 16px; height: 16px; color: var(--think-color); filter: drop-shadow(0 0 6px var(--think-glow)); }
+
+.think3d-title {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-2);
+  letter-spacing: 0.02em;
+}
+
+.think3d-value {
+  margin-left: auto;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--think-color);
+  text-shadow: 0 0 12px var(--think-glow);
+}
+
+.think3d-rail {
+  position: relative;
+  height: 36px;
+  padding: 0 2px;
+}
+
+/* 3D 轨道凹槽 */
+.think3d-track {
+  position: absolute;
+  left: 8px;
+  right: 8px;
+  top: 50%;
+  height: 10px;
+  transform: translateY(-50%);
+  border-radius: 999px;
+  background: linear-gradient(180deg, #d1d5db 0%, #e5e7eb 35%, #f3f4f6 100%);
+  box-shadow:
+    inset 0 2px 5px rgba(0, 0, 0, 0.18),
+    inset 0 -1px 0 rgba(255, 255, 255, 0.85),
+    0 1px 0 rgba(255, 255, 255, 0.6);
+}
+
+.think3d-fill {
+  position: absolute;
+  left: 8px;
+  top: 50%;
+  height: 10px;
+  transform: translateY(-50%);
+  border-radius: 999px 0 0 999px;
+  background: linear-gradient(180deg, var(--think-color) 0%, color-mix(in srgb, var(--think-color) 75%, #000) 100%);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.35),
+    0 0 14px var(--think-glow);
+  pointer-events: none;
+  transition: width 0.12s ease, background 0.2s ease, box-shadow 0.2s ease;
+}
+
+.think3d-ticks {
+  position: absolute;
+  left: 8px;
+  right: 8px;
+  top: 50%;
+  transform: translateY(-50%);
+  display: flex;
+  justify-content: space-between;
+  pointer-events: none;
+  padding: 0 1px;
+}
+
+.think3d-tick {
+  width: 3px;
+  height: 3px;
+  border-radius: 50%;
+  background: rgba(0, 0, 0, 0.15);
+  box-shadow: 0 1px 0 rgba(255, 255, 255, 0.5);
+}
+
+.think3d-tick.active {
+  background: var(--think-color);
+  box-shadow: 0 0 6px var(--think-glow);
+}
+
+/* 原生 range 透明覆盖，保留拖拽手感 */
+.think3d-input {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 0;
+  width: 100%;
+  height: 36px;
+  margin: 0;
+  opacity: 0;
+  cursor: grab;
+  z-index: 3;
+}
+
+.think3d-input:active { cursor: grabbing; }
+
+/* 3D 滑块拇指（视觉层，跟随 input） */
+.think3d-thumb {
+  position: absolute;
+  top: 50%;
+  width: 22px;
+  height: 22px;
+  margin-left: -11px;
+  transform: translateY(-50%);
+  border-radius: 50%;
+  background: linear-gradient(145deg, #ffffff 0%, #e8ecf1 45%, #cfd6df 100%);
+  border: 1px solid rgba(255, 255, 255, 0.9);
+  box-shadow:
+    0 4px 10px rgba(0, 0, 0, 0.22),
+    0 1px 2px rgba(0, 0, 0, 0.12),
+    inset 0 2px 4px rgba(255, 255, 255, 0.95),
+    inset 0 -2px 3px rgba(0, 0, 0, 0.08);
+  pointer-events: none;
+  z-index: 2;
+  transition: left 0.08s ease, box-shadow 0.15s ease;
+}
+
+.think3d-thumb::after {
+  content: "";
+  position: absolute;
+  inset: 5px;
+  border-radius: 50%;
+  background: radial-gradient(circle at 35% 30%, var(--think-color), color-mix(in srgb, var(--think-color) 60%, #000));
+  box-shadow: inset 0 1px 2px rgba(255, 255, 255, 0.4);
+}
+
+.think3d-input:focus-visible + .think3d-thumb {
+  box-shadow:
+    0 0 0 3px var(--think-glow),
+    0 4px 10px rgba(0, 0, 0, 0.22),
+    inset 0 2px 4px rgba(255, 255, 255, 0.95);
+}
+
+.think3d-legend {
+  display: flex;
+  justify-content: space-between;
+  margin-top: 6px;
+  padding: 0 4px;
+}
+
+.think3d-legend span {
+  font-size: 10px;
+  color: var(--text-3);
+  transition: color 0.15s, font-weight 0.15s;
+}
+
+.think3d-legend span.active {
+  color: var(--think-color);
+  font-weight: 700;
+}
+
+/* 聊天区触发按钮 */
+.cb-btn.think-pick {
+  gap: 6px;
+  min-width: 0;
+  border: 1px solid var(--border);
+  background: linear-gradient(180deg, var(--card-bg) 0%, var(--soft-bg) 100%);
+  box-shadow: 0 1px 0 rgba(255, 255, 255, 0.6), inset 0 1px 0 rgba(255, 255, 255, 0.5);
+}
+
+.cb-btn.think-pick .think-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--think-accent, #34d399);
+  box-shadow: 0 0 8px var(--think-glow, rgba(52, 211, 153, 0.5));
+}
+
+.think-popover {
+  position: fixed;
+  z-index: 180;
+  padding: 14px 16px 12px;
+  min-width: 300px;
+  background: var(--card-bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow:
+    0 20px 40px rgba(0, 0, 0, 0.14),
+    inset 0 1px 0 rgba(255, 255, 255, 0.65);
+}
+
+.think-popover::after {
+  content: "";
+  position: absolute;
+  bottom: -6px;
+  left: 50%;
+  width: 12px;
+  height: 12px;
+  background: var(--card-bg);
+  border-right: 1px solid var(--border);
+  border-bottom: 1px solid var(--border);
+  transform: translateX(-50%) rotate(45deg);
+}

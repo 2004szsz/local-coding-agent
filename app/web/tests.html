@@ -1,0 +1,250 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>提示词优化系统 · 全量测试台</title>
+  <link rel="stylesheet" href="/static/style.css" />
+  <link rel="stylesheet" href="/static/prompt-optimizer/prompt-optimizer.css" />
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>&#129514;</text></svg>" />
+</head>
+<body class="po-test-body">
+
+<!-- 供 ui.js 初始化的隐藏宿主页 DOM（UAT 自动化用） -->
+<div id="po-mock-host" hidden>
+  <div class="composer-wrap">
+    <div class="composer"><textarea id="input-box"></textarea></div>
+    <div class="composer-hint"></div>
+  </div>
+  <div id="toast" hidden></div>
+</div>
+
+<div class="po-test-page">
+  <h1>🧪 提示词优化系统 · 全量测试台</h1>
+  <div class="po-sub">三层架构（模型模板 / IDE 上下文 / 语义增强）+ 智能体专项 · 单元 / 集成 / UAT / 全量化验证 · 覆盖率要求 ≥90%</div>
+
+  <div class="po-test-toolbar">
+    <button class="po-primary-btn" id="btn-rerun">重新运行</button>
+    <button class="po-mini-btn" id="btn-export">导出报告 JSON</button>
+    <a class="po-mini-btn" href="/" target="_blank">返回聊天页</a>
+    <span id="run-state" style="color:var(--orange)">运行中…</span>
+  </div>
+
+  <div class="po-progress"><div id="progress-bar"></div></div>
+
+  <h2 style="font-size:15px;margin:18px 0 8px;">① 总览</h2>
+  <div class="po-stat-grid" id="stat-grid"></div>
+
+  <h2 style="font-size:15px;margin:18px 0 8px;">② 全量化验证指标</h2>
+  <div class="po-stat-grid" id="metric-grid"></div>
+  <div id="compat-box" style="font-size:12px;color:var(--text-faint);margin-bottom:8px;"></div>
+
+  <h2 style="font-size:15px;margin:18px 0 8px;">③ 函数覆盖率（核心模块，门槛 90%）</h2>
+  <div id="coverage-box"></div>
+
+  <h2 style="font-size:15px;margin:18px 0 8px;">④ 测试套件明细</h2>
+  <div id="suites-box"></div>
+
+  <h2 style="font-size:15px;margin:18px 0 8px;">⑤ 口语化→结构化 人工评分（样本 100 条，评分 ≥4.5 合格，评分自动保存）</h2>
+  <div class="po-stat-grid" id="human-stat"></div>
+  <div id="human-eval-box" style="font-size:12px;"></div>
+
+  <h2 style="font-size:15px;margin:18px 0 8px;">⑥ 用户验收清单（人工勾选，结果自动保存）</h2>
+  <div class="po-stat-grid" id="uat-stat"></div>
+  <div id="uat-box" style="font-size:12.5px;"></div>
+
+  <h2 style="font-size:15px;margin:18px 0 8px;">⑦ 运行日志</h2>
+  <pre class="po-log" id="log-box"></pre>
+</div>
+
+<!-- ===== 被测模块（顺序：依赖在前） ===== -->
+<script>window.PO_UI_VISIBLE = true; window.PO_DEBUG_CONTEXT_MODAL = true;</script>
+<script src="/static/prompt-optimizer/templates.js"></script>
+<script src="/static/prompt-optimizer/context.js"></script>
+<script src="/static/prompt-optimizer/context-bridge.js"></script>
+<script src="/static/prompt-optimizer/context-client.js"></script>
+<script src="/static/prompt-optimizer/match-client.js"></script>
+<script src="/static/prompt-optimizer/enhancer.js"></script>
+<script src="/static/prompt-optimizer/agent.js"></script>
+<script src="/static/prompt-optimizer/optimizer.js"></script>
+<script src="/static/prompt-optimizer/ui.js"></script>
+<script src="/static/prompt-optimizer/test-framework.js"></script>
+<script src="/static/prompt-optimizer/tests.js"></script>
+
+<script>
+(function () {
+  "use strict";
+  var HUMAN_KEY = "po-human-eval-v1";
+  var UAT_KEY = "po-uat-check-v1";
+  var lastReport = null;
+
+  function loadMap(key) {
+    try { return JSON.parse(localStorage.getItem(key) || "{}"); } catch (e) { return {}; }
+  }
+  function saveMap(key, m) {
+    try { localStorage.setItem(key, JSON.stringify(m)); } catch (e) { /* ignore */ }
+  }
+  function card(num, lbl, cls) {
+    return '<div class="po-stat-card ' + (cls || "") + '"><div class="num">' + num + '</div><div class="lbl">' + lbl + '</div></div>';
+  }
+
+  async function run() {
+    document.getElementById("run-state").textContent = "运行中…（含 1000 次稳定性与 100×10 并发仿真）";
+    await new Promise(function (r) { setTimeout(r, 30); });
+    var report = await window.PO.runAllPromptOptimizerTests();
+    lastReport = report;
+    render(report);
+  }
+
+  function render(report) {
+    var a = report.artifacts;
+    document.getElementById("run-state").textContent =
+      report.totals.failed === 0 ? "✅ 全部通过" : "❌ 有 " + report.totals.failed + " 个失败";
+    document.getElementById("progress-bar").style.width =
+      (report.totals.failed === 0 ? "100%" : (report.totals.passed / report.totalCases * 100) + "%");
+
+    /* 总览 */
+    document.getElementById("stat-grid").innerHTML =
+      card(report.totalCases, "用例总数", "po-stat-info") +
+      card(report.totals.passed, "通过", "po-stat-ok") +
+      card(report.totals.failed, "失败", report.totals.failed ? "po-stat-bad" : "") +
+      card(report.durationMs + "ms", "总耗时", "po-stat-info") +
+      card(report.coverage.percent + "%", "核心函数覆盖率（" + report.coverage.covered + "/" + report.coverage.total + "）",
+        report.coverage.percent >= 90 ? "po-stat-ok" : "po-stat-bad");
+
+    /* 验证指标 */
+    document.getElementById("metric-grid").innerHTML =
+      card(a.stability.rate + "%", "1000 次稳定性（成功 " + a.stability.success + "，门槛 99.5%）", a.stability.rate >= 99.5 ? "po-stat-ok" : "po-stat-bad") +
+      card(a.concurrency.avgRoundMs + "ms", "100 并发×10 轮（失败 " + a.concurrency.fail + "）", a.concurrency.fail === 0 ? "po-stat-ok" : "po-stat-bad") +
+      card(a.templateMatch.rate + "%", "模板匹配 " + a.templateMatch.correct + "/" + a.templateMatch.total + "（门槛 99%）", a.templateMatch.rate >= 99 ? "po-stat-ok" : "po-stat-bad") +
+      card(a.contextInjection.rate + "%", "上下文注入 " + a.contextInjection.correct + "/" + a.contextInjection.checks + "（门槛 98%）", a.contextInjection.rate >= 98 ? "po-stat-ok" : "po-stat-bad") +
+      card(a.semantic.avg + "/5", "口语结构化均分（" + a.semantic.total + " 条，门槛 4.5）", a.semantic.avg >= 4.5 ? "po-stat-ok" : "po-stat-bad") +
+      card(a.efficiency.avgGainPercent + "%", "任务效率仿真提升（" + a.efficiency.tasks + " 任务，门槛 40%）", a.efficiency.avgGainPercent >= 40 ? "po-stat-ok" : "po-stat-bad");
+
+    document.getElementById("compat-box").innerHTML = "IDE 兼容矩阵：" +
+      a.compatibility.map(function (m) { return m.ide + "（" + m.shell + "）" + m.core; }).join("　｜　") +
+      "　；跨模型验证：" + a.crossModel.families.join("、") + "，每族 " + a.crossModel.samplesPerFamily + " 样本，结构化任务完全一致。";
+
+    /* 覆盖率 */
+    document.getElementById("coverage-box").innerHTML = report.coverage.groups.map(function (g) {
+      var ok = g.percent >= 90;
+      return '<div style="margin-bottom:8px;"><div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:2px;">' +
+        '<span>' + g.name + '</span><span style="color:' + (ok ? "var(--green)" : "var(--red)") + '">' +
+        g.covered + "/" + g.total + " = " + g.percent + "%" + (g.missing.length ? "（未覆盖：" + g.missing.join(", ") + "）" : "") +
+        '</span></div><div class="po-progress" style="margin:0;"><div style="width:' + g.percent + '%;background:' +
+        (ok ? "var(--green)" : "var(--red)") + '"></div></div></div>';
+    }).join("");
+
+    /* 套件明细 */
+    document.getElementById("suites-box").innerHTML = report.suites.map(function (s, i) {
+      var cases = s.cases.map(function (c) {
+        return '<div class="po-case ' + (c.ok ? "pass" : "fail") + '"><span>' + c.name + '</span>' +
+          (c.ok ? "" : '<span class="err">' + c.error + "</span>") + "</div>";
+      }).join("");
+      return '<div class="po-suite"><div class="po-suite-head" data-i="' + i + '">' +
+        '<span>' + s.name + '</span><span style="color:' + (s.failed ? "var(--red)" : "var(--green)") + '">' +
+        s.passed + " 通过" + (s.failed ? " / " + s.failed + " 失败" : "") + "</span></div>" +
+        '<div class="po-suite-body"' + (s.failed ? "" : " hidden") + ">" + cases + "</div></div>";
+    }).join("");
+    Array.prototype.forEach.call(document.querySelectorAll(".po-suite-head"), function (h) {
+      h.addEventListener("click", function () {
+        var b = h.nextElementSibling;
+        b.hidden = !b.hidden;
+      });
+    });
+
+    renderHumanEval(report);
+    renderUat(report);
+
+    /* 日志 */
+    var log = [];
+    report.suites.forEach(function (s) {
+      log.push("● " + s.name + "  [" + s.passed + "/" + s.cases.length + "]");
+      s.cases.forEach(function (c) { if (!c.ok) log.push("  ✗ " + c.name + "\n" + c.error); });
+    });
+    document.getElementById("log-box").textContent =
+      log.join("\n") + "\n\n" + JSON.stringify({ artifacts: report.artifacts, coverage: report.coverage }, null, 2);
+  }
+
+  /* 100 条样本人工评分（默认取 20 条代表样本，评分持久化） */
+  function renderHumanEval(report) {
+    var samples = report.artifacts.semantic.samples;
+    var shown = samples.filter(function (_, i) { return i % 5 === 0; });
+    var scores = loadMap(HUMAN_KEY);
+    function refreshStat() {
+      var vals = Object.keys(scores).map(function (k) { return +scores[k]; }).filter(function (v) { return v; });
+      var avg = vals.length ? (vals.reduce(function (a, b) { return a + b; }, 0) / vals.length).toFixed(2) : "—";
+      document.getElementById("human-stat").innerHTML =
+        card(vals.length + "/" + shown.length, "已人工评分样本数", "po-stat-info") +
+        card(avg, "人工评分均值（门槛 4.5）", vals.length && avg >= 4.5 ? "po-stat-ok" : "po-stat-warn") +
+        card("4.5/5", "需求验收线", "po-stat-info");
+    }
+    var html = '<table style="width:100%;border-collapse:collapse;"><tr><th style="text-align:left;width:60%;">样本（自动分）</th><th>意图</th><th>1-5 分</th></tr>';
+    shown.forEach(function (s) {
+      var val = scores[s.text] || "";
+      var opts = [1, 2, 3, 4, 5].map(function (n) {
+        return '<option value="' + n + '"' + (String(val) === String(n) ? " selected" : "") + ">" + n + "</option>";
+      }).join("");
+      html += '<tr style="border-bottom:1px solid var(--border);">' +
+        '<td style="padding:5px 4px;">' + escapeHtml(s.text) + ' <span style="color:var(--cyan)">（' + s.score + '）</span></td>' +
+        '<td style="text-align:center;">' + s.intent + '</td>' +
+        '<td style="text-align:center;"><select data-text="' + escapeHtml(s.text) + '" style="background:var(--bg-input);color:var(--text);border:1px solid var(--border);border-radius:6px;"><option value="">-</option>' + opts + "</select></td></tr>";
+    });
+    html += "</table>";
+    document.getElementById("human-eval-box").innerHTML = html;
+    Array.prototype.forEach.call(document.querySelectorAll("#human-eval-box select"), function (sel) {
+      sel.addEventListener("change", function () {
+        scores[sel.getAttribute("data-text")] = sel.value;
+        saveMap(HUMAN_KEY, scores);
+        refreshStat();
+      });
+    });
+    refreshStat();
+  }
+
+  /* 25 条 UAT 人工清单 */
+  function renderUat() {
+    var checks = loadMap(UAT_KEY);
+    function refreshStat() {
+      var done = Object.keys(checks).filter(function (k) { return checks[k]; }).length;
+      var total = report0.uatChecklist.length;
+      document.getElementById("uat-stat").innerHTML =
+        card(done + "/" + total, "已验收条目", done === total ? "po-stat-ok" : "po-stat-warn") +
+        card(total, "UAT 清单总数", "po-stat-info");
+    }
+    var report0 = lastReport;
+    document.getElementById("uat-box").innerHTML = report0.uatChecklist.map(function (t, i) {
+      return '<label style="display:flex;gap:8px;align-items:flex-start;padding:5px 2px;border-bottom:1px solid var(--border);cursor:pointer;">' +
+        '<input type="checkbox" data-i="' + i + '" ' + (checks[i] ? "checked" : "") + ' style="margin-top:3px;"/><span>' + (i + 1) + ". " + t + "</span></label>";
+    }).join("");
+    Array.prototype.forEach.call(document.querySelectorAll("#uat-box input"), function (box) {
+      box.addEventListener("change", function () {
+        checks[box.getAttribute("data-i")] = box.checked;
+        saveMap(UAT_KEY, checks);
+        refreshStat();
+      });
+    });
+    refreshStat();
+  }
+
+  function escapeHtml(s) {
+    return String(s).replace(/[&<>"]/g, function (c) {
+      return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c];
+    });
+  }
+
+  document.getElementById("btn-rerun").addEventListener("click", function () { location.reload(); });
+  document.getElementById("btn-export").addEventListener("click", function () {
+    if (!lastReport) return;
+    var blob = new Blob([JSON.stringify(lastReport, null, 2)], { type: "application/json" });
+    var url = URL.createObjectURL(blob);
+    var a = document.createElement("a");
+    a.href = url; a.download = "prompt-optimizer-test-report.json"; a.click();
+    URL.revokeObjectURL(url);
+  });
+
+  window.addEventListener("load", function () { setTimeout(run, 80); });
+})();
+</script>
+</body>
+</html>
