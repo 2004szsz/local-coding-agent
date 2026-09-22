@@ -164,7 +164,7 @@ class ModuleCoordinatorTests(unittest.TestCase):
 
         status = ModuleCoordinator()._access_status(FakeState())
         self.assertEqual(status["status"], "ready")
-        self.assertEqual(status["value"], "完全访问")
+        self.assertEqual(status["value"], "本机已授权")
 
     def test_adapt_access_reports_gate_even_when_restricted(self):
         class FakeState:

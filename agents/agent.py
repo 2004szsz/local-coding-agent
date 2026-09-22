@@ -274,12 +274,17 @@ def _build_local_access(cfg: Dict[str, Any], tools: ToolRegistry,
     不会因为配置组合出「声明了但根本没注册」的缺口。
     """
     from tools.fs_access import AccessBroker
-    from tools.fs_tools import register_fs_read_tools, register_fs_write_tools
+    from tools.fs_tools import (
+        apply_fs_write_descriptions,
+        register_fs_read_tools,
+        register_fs_write_tools,
+    )
     from tools.system_tools import register_system_action_tools, register_system_tools
 
     broker = None
     local = cfg.get("local_access") or {}
     system = cfg.get("system") or {}
+    exec_mode = (cfg.get("agent") or {}).get("exec_mode")
 
     if local.get("enabled"):
         broker = AccessBroker.from_config(local, ROOT)
@@ -291,7 +296,14 @@ def _build_local_access(cfg: Dict[str, Any], tools: ToolRegistry,
             skill_names.append("local_system")
         if broker.has_writable_roots():
             names = register_fs_write_tools(tools, broker, local)
-            print(f"[本地访问] 写入工具已注册（L4，需人工确认）: {', '.join(names)}")
+            apply_fs_write_descriptions(tools, exec_mode)
+            mode_label = str(exec_mode or "auto_workspace")
+            confirm_hint = (
+                "full_access 下已授权可写根可自动"
+                if mode_label == "full_access"
+                else "L4，默认需人工确认"
+            )
+            print(f"[本地访问] 写入工具已注册（{confirm_hint}｜档 {mode_label}）: {', '.join(names)}")
             if "local_system_write" not in skill_names:
                 skill_names.append("local_system_write")
 

@@ -47,7 +47,7 @@ modules:
     optimize_entry: "subagents"
 
   access:
-    label: "完全访问"
+    label: "本机访问"
     chain_id: "access"
     paths:
       - "tools/fs_access.py"

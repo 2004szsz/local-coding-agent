@@ -165,7 +165,7 @@ class ModuleCoordinator:
         elif getattr(app_state, "broker", None):
             local = True
         if local:
-            return {"status": "ready", "detail": "本机完全访问已启用", "value": "完全访问"}
+            return {"status": "ready", "detail": "本机访问已授权", "value": "本机已授权"}
         return {"status": "warn", "detail": "本机访问受限", "value": "受限访问"}
 
     @staticmethod
@@ -254,9 +254,15 @@ class ModuleCoordinator:
         ready = st["status"] == "ready"
         message = st["detail"]
         if ready:
+            loop = getattr(app_state, "loop_deps", None)
+            mode = str(getattr(loop, "mode", "") or "")
+            write_policy = (
+                "自动（full_access）" if mode == "full_access" else "需确认"
+            )
+            mode_hint = f"｜执行档 {mode}" if mode else ""
             message = (
-                f"{st['detail']}｜闸门 fs_read={gate['fs_read']}（自动）/"
-                f"fs_write={gate['fs_write']}（需确认）"
+                f"{st['detail']}{mode_hint}｜闸门 fs_read={gate['fs_read']}（自动）/"
+                f"fs_write={gate['fs_write']}（{write_policy}）"
             )
         return {
             "ok": ready,

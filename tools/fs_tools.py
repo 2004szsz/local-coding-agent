@@ -11,8 +11,9 @@ list_dir / read_file / write_file / edit_file（语义不变），工作区外�
     register_fs_write_tools  写入组：fs_write / fs_edit / fs_copy / fs_move
                             / fs_delete / fs_restore（仅当存在可写根时由装配调用）
 
-写入组全部登记为 L4（需人工确认），权限矩阵见 agents/state_loop/permissions.py：
-「读自动、可写根上写需要确认、只读根上写被门闩拒绝」。
+写入组副作用登记为 L4；是否需确认由当前 ExecMode 决定（见 apply_fs_write_descriptions）。
+权限矩阵见 agents/state_loop/permissions.py：读自动、只读根上写被门闩拒绝、
+可写根上写在 confirm 档需确认、在 full_access 档可自动。
 
 安全约定（与 docs/local-system-access-plan.md 第 5 节一致）：
 - 一切路径经 AccessBroker.resolve，本模块**没有任何自己的 open()/unlink() 旁路**；
@@ -35,7 +36,7 @@ from .errors import PatchConflictError
 from .fs_access import AccessBroker
 
 __all__ = ["register_fs_read_tools", "register_fs_write_tools",
-           "build_fs_tools", "DEFAULT_READ_LIMITS"]
+           "build_fs_tools", "apply_fs_write_descriptions", "DEFAULT_READ_LIMITS"]
 
 # 搜索时默认跳过的目录名（与工作区 file_search 同一组约定）
 _SEARCH_SKIP_DIRS = {
@@ -298,8 +299,53 @@ def _build_fs_stat(broker: AccessBroker) -> Tool:
 
 
 # ======================================================================
-# 写入组（L4，需人工确认；权限由门闩 + L4 分层强制）
+# 写入组（L4；确认策略由 ExecMode 决定，见 apply_fs_write_descriptions）
 # ======================================================================
+#: 写入工具「无策略尾句」的基底说明。装配后由 apply_fs_write_descriptions 追加尾句。
+_FS_WRITE_BASE: Dict[str, str] = {
+    "fs_write": (
+        "在已授权**可写**根内写入/新建文件（整体覆盖）。"
+        "只读根会被拒绝；修改已有文件优先用 fs_edit 做局部编辑。"
+    ),
+    "fs_edit": (
+        "对已授权**可写**根内的已有文件做精确局部编辑：old_string 必须与原文"
+        "逐字一致（含缩进）且唯一匹配，多处匹配需 replace_all=true。"
+    ),
+    "fs_copy": "在已授权根之间复制文件或目录。目标根必须可写。",
+    "fs_move": "在已授权根之间移动文件或目录。目标根必须可写。",
+    "fs_delete": (
+        "删除已授权可写根内的文件/目录——**永不真删**，只移入隔离目录，"
+        "可用 fs_restore 还原。"
+    ),
+    "fs_restore": "把 fs_delete 移入隔离目录的内容还原到原位置（由 ts 指定）。",
+}
+
+_FS_WRITE_CONFIRM = "该操作需要用户确认后才能执行。"
+_FS_WRITE_AUTO = (
+    "当前执行档为完全访问：已授权可写根内可自动执行；"
+    "未授权路径、只读根与越界仍被拒绝。"
+)
+
+
+def apply_fs_write_descriptions(registry: ToolRegistry, mode: Any = None) -> int:
+    """
+    按 ExecMode 重写 fs_* 写入工具描述尾句，避免「完全访问」下仍写「必须确认」。
+
+    副作用等级仍是 L4；本函数只改模型可见文案，不改闸门逻辑。
+    :return: 更新的工具数
+    """
+    mode_text = str(getattr(mode, "value", mode) or "").strip().lower()
+    clause = _FS_WRITE_AUTO if mode_text == "full_access" else _FS_WRITE_CONFIRM
+    updated = 0
+    for name, base in _FS_WRITE_BASE.items():
+        if not registry.has(name):
+            continue
+        tool = registry.get(name)
+        tool.description = f"{base}{clause}"
+        updated += 1
+    return updated
+
+
 def _build_fs_write(broker: AccessBroker) -> Tool:
     def fs_write(kwargs: Dict[str, Any]) -> str:
         root = str(_require(kwargs, "root"))
@@ -319,9 +365,7 @@ def _build_fs_write(broker: AccessBroker) -> Tool:
 
     return Tool(
         name="fs_write",
-        description=("在已授权**可写**根内写入/新建文件（整体覆盖）。"
-                     "只读根会被拒绝；修改已有文件优先用 fs_edit 做局部编辑。"
-                     "该操作需要用户确认后才能执行。"),
+        description=_FS_WRITE_BASE["fs_write"] + _FS_WRITE_CONFIRM,
         parameters={
             "type": "object",
             "properties": {
@@ -364,9 +408,7 @@ def _build_fs_edit(broker: AccessBroker) -> Tool:
 
     return Tool(
         name="fs_edit",
-        description=("对已授权**可写**根内的已有文件做精确局部编辑：old_string 必须与原文"
-                     "逐字一致（含缩进）且唯一匹配，多处匹配需 replace_all=true。"
-                     "该操作需要用户确认后才能执行。"),
+        description=_FS_WRITE_BASE["fs_edit"] + _FS_WRITE_CONFIRM,
         parameters={
             "type": "object",
             "properties": {
@@ -408,8 +450,7 @@ def _build_fs_copy_move(broker: AccessBroker, move: bool) -> Tool:
 
     return Tool(
         name=name,
-        description=(f"在已授权根之间{verb}文件或目录。目标根必须可写。"
-                     "该操作需要用户确认后才能执行。"),
+        description=_FS_WRITE_BASE[name] + _FS_WRITE_CONFIRM,
         parameters={
             "type": "object",
             "properties": {
@@ -462,8 +503,7 @@ def _build_fs_delete(broker: AccessBroker) -> Tool:
 
     return Tool(
         name="fs_delete",
-        description=("删除已授权可写根内的文件/目录——**永不真删**，只移入隔离目录，"
-                     "可用 fs_restore 还原。该操作需要用户确认后才能执行。"),
+        description=_FS_WRITE_BASE["fs_delete"] + _FS_WRITE_CONFIRM,
         parameters={
             "type": "object",
             "properties": {
@@ -499,7 +539,7 @@ def _build_fs_restore(broker: AccessBroker) -> Tool:
 
     return Tool(
         name="fs_restore",
-        description="把 fs_delete 移入隔离目录的内容还原到原位置（由 ts 指定）。",
+        description=_FS_WRITE_BASE["fs_restore"] + _FS_WRITE_CONFIRM,
         parameters={
             "type": "object",
             "properties": {
@@ -565,6 +605,8 @@ def register_fs_write_tools(registry: ToolRegistry, broker: AccessBroker,
     ]
     for tool in tools:
         registry.register(tool)
+    # 缺省按 auto_workspace（需确认）；装配层会按真实 ExecMode 再调一次。
+    apply_fs_write_descriptions(registry, "auto_workspace")
     return [t.name for t in tools]
 
 

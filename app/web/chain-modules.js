@@ -117,10 +117,10 @@
     if (!enabled && roots && roots.length) enabled = true;
     return {
       id: "access",
-      label: "完全访问",
+      label: "本机访问",
       status: enabled ? "ready" : "warn",
-      detail: enabled ? "本机完全访问已启用" : "本机访问受限",
-      value: enabled ? "完全访问" : "受限访问",
+      detail: enabled ? "本机访问已授权" : "本机访问受限",
+      value: enabled ? "本机已授权" : "受限访问",
       optimize_entry: "skills",
     };
   }
@@ -175,7 +175,9 @@
     var roots = (runtime && runtime.local_access && runtime.local_access.roots) || [];
     if (!enabled && roots.length) enabled = true;
     var gate = { fs_read: "L0", fs_write: "L4" };
-    var detail = enabled ? "本机完全访问已启用" : "本机访问受限";
+    var detail = enabled ? "本机访问已授权" : "本机访问受限";
+    var mode = (runtime && runtime.exec_mode) || "";
+    var writePolicy = mode === "full_access" ? "自动（full_access）" : "需确认";
     return {
       ok: enabled,
       module: "access",
@@ -183,7 +185,8 @@
       status: enabled ? "ready" : "warn",
       gate: gate,
       message: enabled
-        ? (detail + "｜闸门 fs_read=L0（自动）/fs_write=L4（需确认）")
+        ? (detail + (mode ? "｜执行档 " + mode : "") +
+           "｜闸门 fs_read=L0（自动）/fs_write=L4（" + writePolicy + "）")
         : detail,
       optimize_entry: "skills",
     };

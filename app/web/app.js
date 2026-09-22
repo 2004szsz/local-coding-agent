@@ -82,7 +82,8 @@ const I18N = {
     "greeting.afternoon": "下午好呀，继续加油", "greeting.evening": "晚上好呀，辛苦了",
     "composer.placeholder": "今天帮你做些什么？@ 引用文件与对话，/ 调用技能与指令",
     "composer.hint": "AI 生成内容仅供参考；添加本机项目后可读写桌面、D 盘等目录（高权限操作需确认）",
-    "composer.fullAccess": "完全访问", "composer.computer": "电脑操作", "composer.send": "发送", "composer.stop": "停止",
+    "composer.localGranted": "本机已授权", "composer.localRestricted": "受限访问",
+    "composer.computer": "电脑操作", "composer.send": "发送", "composer.stop": "停止",
     "exec.plan": "计划模式", "exec.confirm": "变更前确认", "exec.auto": "自动编辑", "exec.full": "完全访问",
     "exec.planHint": "编辑前先出计划。", "exec.confirmHint": "改文件前先问我。",
     "exec.autoHint": "自动编辑文件。", "exec.fullHint": "减少确认次数。",
@@ -142,7 +143,8 @@ const I18N = {
     "greeting.afternoon": "Good afternoon — keep going", "greeting.evening": "Good evening — great work today",
     "composer.placeholder": "What can I help with today? @ files & context, / skills & commands.",
     "composer.hint": "AI output is for reference only. Add a local project to access files (high-risk actions require approval).",
-    "composer.fullAccess": "Full Access", "composer.computer": "Computer", "composer.send": "Send", "composer.stop": "Stop",
+    "composer.localGranted": "Local authorized", "composer.localRestricted": "Restricted",
+    "composer.computer": "Computer", "composer.send": "Send", "composer.stop": "Stop",
     "exec.plan": "Plan", "exec.confirm": "Ask before edits", "exec.auto": "Auto-edit", "exec.full": "Full access",
     "exec.planHint": "Plan before editing.", "exec.confirmHint": "Ask before changing files.",
     "exec.autoHint": "Edit files automatically.", "exec.fullHint": "Fewer confirmations.",
@@ -891,7 +893,11 @@ function renderChainFooter() {
   if (ragEl) ragEl.className = "cf-item cf-status cf-clickable " + (state.ragOk && ragCount > 0 ? "ready" : "warn");
 
   const localOn = state.runtime?.local_access?.enabled;
-  if (accessText) accessText.textContent = localOn ? t("composer.fullAccess") : "受限访问";
+  if (accessText) {
+    accessText.textContent = localOn
+      ? t("composer.localGranted")
+      : t("composer.localRestricted");
+  }
   if (accessEl) accessEl.className = "cf-item cf-status cf-clickable " + (localOn ? "ready" : "warn");
 }
 
