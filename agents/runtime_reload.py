@@ -181,6 +181,7 @@ def runtime_status(runtime: Runtime, cfg: Dict[str, Any],
         "active_project_id": state.active_project_id,
         "projects": [p.to_dict() for p in state.projects],
         "capabilities": state.capabilities,
+        "run_mode": state.run_mode(),
         "local_access": {
             "enabled": bool((cfg.get("local_access") or {}).get("enabled")),
             "roots": (runtime.broker.roots_view() if runtime.broker else []),

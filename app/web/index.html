@@ -183,7 +183,7 @@
           <h1 class="greeting" id="greeting">早上好呀，新的一天开始啦</h1>
 
           <div class="mode-tabs" id="mode-tabs" role="tablist">
-            <button type="button" class="mode-tab active" data-mode="office" role="tab" data-i18n="mode.office">日常办公</button>
+            <button type="button" class="mode-tab active" data-mode="office" role="tab" data-i18n="mode.office">文档办公</button>
             <button type="button" class="mode-tab" data-mode="code" role="tab" data-i18n="mode.code">代码开发</button>
             <button type="button" class="mode-tab" data-mode="design" role="tab" data-i18n="mode.design">设计创意</button>
           </div>
@@ -194,7 +194,7 @@
                 data-i18n-placeholder="composer.placeholder"
                 placeholder="今天帮你做些什么？@ 引用文件与对话，/ 调用技能与指令"></textarea>
               <div class="composer-bar">
-                <button class="cb-btn" id="btn-attach" type="button" title="添加附件"><svg class="ic sm"><use href="#i-plus"/></svg></button>
+                <button class="cb-btn" id="btn-attach" type="button" data-i18n-title="composer.attachTitle" title="选择本机项目文件夹"><svg class="ic sm"><use href="#i-plus"/></svg></button>
                 <button class="cb-btn role-pick" id="btn-agent-role" type="button">
                   <span class="role-avatar" aria-hidden="true">A</span>
                   <span id="agent-role-label" data-i18n="composer.role">全栈工程师</span>
@@ -226,9 +226,9 @@
                 <span id="cf-rag-text" data-i18n="chain.ragIdle">知识库待索引</span>
               </button>
               <span class="cf-sep" aria-hidden="true"></span>
-              <button type="button" class="cf-item cf-status cf-clickable" id="cf-access-status" title="点击优化访问权限模块">
+              <button type="button" class="cf-item cf-status cf-clickable" id="cf-access-status" title="切换沙箱 / 本地电脑运行">
                 <svg class="ic sm"><use href="#i-shield"/></svg>
-                <span id="cf-access-text" data-i18n="composer.localGranted">本机已授权</span>
+                <span id="cf-access-text" data-i18n="composer.localRestricted">沙箱运行</span>
               </button>
             </div>
             <div class="composer-hint" id="composer-hint" data-i18n="composer.hint">AI 生成内容仅供参考；添加本机项目后可读写桌面、D 盘等目录（高权限操作需确认）</div>

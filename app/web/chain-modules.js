@@ -112,16 +112,39 @@
   }
 
   function fallbackAccessModule(runtime) {
+    var runMode = (runtime && runtime.run_mode)
+      || (runtime && runtime.capabilities && runtime.capabilities.run_mode)
+      || "sandbox";
     var enabled = !!(runtime && runtime.local_access && runtime.local_access.enabled);
     var roots = (runtime && runtime.local_access && runtime.local_access.roots) || [];
     if (!enabled && roots && roots.length) enabled = true;
+    if (runMode === "local" && enabled) {
+      return {
+        id: "access",
+        label: "运行模式",
+        status: "ready",
+        detail: "本地电脑运行已接入项目",
+        value: "本地电脑",
+        optimize_entry: null,
+      };
+    }
+    if (runMode === "local") {
+      return {
+        id: "access",
+        label: "运行模式",
+        status: "warn",
+        detail: "本地电脑运行：请用 + 选择文件夹",
+        value: "本地电脑",
+        optimize_entry: null,
+      };
+    }
     return {
       id: "access",
-      label: "本机访问",
-      status: enabled ? "ready" : "warn",
-      detail: enabled ? "本机访问已授权" : "本机访问受限",
-      value: enabled ? "本机已授权" : "受限访问",
-      optimize_entry: "skills",
+      label: "运行模式",
+      status: "ready",
+      detail: "沙箱运行（不操控本机项目）",
+      value: "沙箱运行",
+      optimize_entry: null,
     };
   }
 
@@ -171,24 +194,46 @@
 
   async function adaptAccessViaRuntime() {
     var runtime = await deps.api("/api/runtime");
+    var runMode = (runtime && runtime.run_mode)
+      || (runtime && runtime.capabilities && runtime.capabilities.run_mode)
+      || "sandbox";
     var enabled = !!(runtime && runtime.local_access && runtime.local_access.enabled);
     var roots = (runtime && runtime.local_access && runtime.local_access.roots) || [];
     if (!enabled && roots.length) enabled = true;
     var gate = { fs_read: "L0", fs_write: "L4" };
-    var detail = enabled ? "本机访问已授权" : "本机访问受限";
     var mode = (runtime && runtime.exec_mode) || "";
     var writePolicy = mode === "full_access" ? "自动（full_access）" : "需确认";
+    if (runMode === "local" && enabled) {
+      return {
+        ok: true,
+        module: "access",
+        action: "verify_access",
+        status: "ready",
+        gate: gate,
+        message: "本地电脑运行已接入｜执行档 " + (mode || "—") +
+          "｜闸门 fs_read=L0 / fs_write=L4（" + writePolicy + "）",
+        optimize_entry: null,
+      };
+    }
+    if (runMode === "local") {
+      return {
+        ok: false,
+        module: "access",
+        action: "verify_access",
+        status: "warn",
+        gate: gate,
+        message: "本地电脑运行：请用输入框旁 + 选择文件夹",
+        optimize_entry: null,
+      };
+    }
     return {
-      ok: enabled,
+      ok: true,
       module: "access",
       action: "verify_access",
-      status: enabled ? "ready" : "warn",
+      status: "ready",
       gate: gate,
-      message: enabled
-        ? (detail + (mode ? "｜执行档 " + mode : "") +
-           "｜闸门 fs_read=L0（自动）/fs_write=L4（" + writePolicy + "）")
-        : detail,
-      optimize_entry: "skills",
+      message: "沙箱运行：仅内置工作区，不操控本机项目",
+      optimize_entry: null,
     };
   }
 
@@ -276,7 +321,6 @@
       "chain-rag": "rag",
       "chain-agent": "agent",
       "cf-rag-status": "rag",
-      "cf-access-status": "access",
     };
     Object.keys(map).forEach(function (elId) {
       var el = document.getElementById(elId);

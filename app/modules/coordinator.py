@@ -155,18 +155,27 @@ class ModuleCoordinator:
         return {"status": "warn", "detail": f"框架 {fw}", "value": label}
 
     def _access_status(self, app_state: Any) -> Dict[str, str]:
+        from app.local_runtime import load_runtime_state
+
+        try:
+            run_mode = load_runtime_state().run_mode()
+        except Exception:  # noqa: BLE001
+            run_mode = "sandbox"
+
         cfg = getattr(app_state, "cfg", {}) or {}
         local = bool((cfg.get("local_access") or {}).get("enabled", False))
-        # 与 fs 链路一致：AccessBroker 已挂载即视为本机访问已启用
-        # （local_runtime 热重载可能先挂 broker，再写回 cfg）
+        # AccessBroker 已挂载即视为本地通道已打开（热重载可能先挂 broker）
         runtime = getattr(app_state, "runtime", None)
         if runtime is not None and getattr(runtime, "broker", None):
             local = True
         elif getattr(app_state, "broker", None):
             local = True
+
         if local:
-            return {"status": "ready", "detail": "本机访问已授权", "value": "本机已授权"}
-        return {"status": "warn", "detail": "本机访问受限", "value": "受限访问"}
+            return {"status": "ready", "detail": "本地电脑运行已接入项目", "value": "本地电脑"}
+        if run_mode == "local":
+            return {"status": "warn", "detail": "本地电脑运行：请用 + 选择文件夹", "value": "待选目录"}
+        return {"status": "ready", "detail": "沙箱运行（不操控本机项目）", "value": "沙箱运行"}
 
     @staticmethod
     def _access_gate_snapshot() -> Dict[str, str]:

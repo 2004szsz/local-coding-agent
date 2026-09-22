@@ -164,7 +164,7 @@ class ModuleCoordinatorTests(unittest.TestCase):
 
         status = ModuleCoordinator()._access_status(FakeState())
         self.assertEqual(status["status"], "ready")
-        self.assertEqual(status["value"], "本机已授权")
+        self.assertEqual(status["value"], "本地电脑")
 
     def test_adapt_access_reports_gate_even_when_restricted(self):
         class FakeState:
@@ -174,10 +174,12 @@ class ModuleCoordinatorTests(unittest.TestCase):
 
         result = ModuleCoordinator().adapt("access", FakeState())
         self.assertEqual(result["module"], "access")
-        self.assertFalse(result["ok"])
+        # 无 broker 时默认沙箱也是合法 ready；闸门快照仍要带回
+        self.assertTrue(result["ok"])
+        self.assertEqual(result["status"], "ready")
         self.assertEqual(result["gate"]["fs_write"], "L4")
         self.assertEqual(result["gate"]["fs_read"], "L0")
-        self.assertIn("本机", result["message"])
+        self.assertTrue("沙箱" in result["message"] or "本地" in result["message"])
 
     def test_adapt_rag_propagates_daemon_failure(self):
         class Daemon:

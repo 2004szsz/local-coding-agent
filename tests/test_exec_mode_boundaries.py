@@ -181,7 +181,7 @@ class AccessLabelSeparationTests(unittest.TestCase):
             broker = Runtime.broker
 
         status = ModuleCoordinator()._access_status(FakeState())
-        self.assertEqual(status["value"], "本机已授权")
+        self.assertEqual(status["value"], "本地电脑")
         self.assertNotEqual(status["value"], "完全访问")
 
 

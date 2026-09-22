@@ -23,6 +23,7 @@ const state = {
   reasoningLevel: "medium",
   execMode: "auto_workspace",
   execModes: null,
+  runMode: "sandbox",
   activeMode: "office",
   agentRole: "fullstack",
   sidebarPanel: "projects",
@@ -63,7 +64,7 @@ const I18N = {
     "ctx.copyTaskPath": "复制任务路径", "ctx.copyLogPath": "复制日志路径", "ctx.copySession": "复制会话 ID",
     "ctx.config": "前往配置", "ctx.viewTrace": "查看调用轨迹", "ctx.feedback": "反馈问题",
     "brand.tagline": "Craftbase，我帮你",
-    "mode.office": "日常办公", "mode.code": "代码开发", "mode.design": "设计创意",
+    "mode.office": "文档办公", "mode.code": "代码开发", "mode.design": "设计创意",
     "chain.fs": "文件", "chain.rag": "知识库", "chain.agent": "循环",
     "chain.ragIdle": "知识库待索引", "chain.ragReady": "知识库已就绪",
     "composer.role": "全栈工程师",
@@ -82,7 +83,14 @@ const I18N = {
     "greeting.afternoon": "下午好呀，继续加油", "greeting.evening": "晚上好呀，辛苦了",
     "composer.placeholder": "今天帮你做些什么？@ 引用文件与对话，/ 调用技能与指令",
     "composer.hint": "AI 生成内容仅供参考；添加本机项目后可读写桌面、D 盘等目录（高权限操作需确认）",
-    "composer.localGranted": "本机已授权", "composer.localRestricted": "受限访问",
+    "composer.localGranted": "本地电脑", "composer.localRestricted": "沙箱运行",
+    "composer.runSandbox": "沙箱运行", "composer.runLocal": "本地电脑运行",
+    "composer.runSandboxHint": "仅内置工作区，不操控本机项目与系统",
+    "composer.runLocalHint": "可选本机文件夹，读写/终端/系统操作受执行档约束",
+    "composer.pickNeedLocal": "请先切换到「本地电脑运行」，再用 + 选择文件夹",
+    "composer.pickCancelled": "已取消选择文件夹",
+    "composer.pickOk": "已接入本地项目，工具与知识库已热重载",
+    "composer.attachTitle": "选择本机项目文件夹",
     "composer.computer": "电脑操作", "composer.send": "发送", "composer.stop": "停止",
     "exec.plan": "计划模式", "exec.confirm": "变更前确认", "exec.auto": "自动编辑", "exec.full": "完全访问",
     "exec.planHint": "编辑前先出计划。", "exec.confirmHint": "改文件前先问我。",
@@ -143,7 +151,14 @@ const I18N = {
     "greeting.afternoon": "Good afternoon — keep going", "greeting.evening": "Good evening — great work today",
     "composer.placeholder": "What can I help with today? @ files & context, / skills & commands.",
     "composer.hint": "AI output is for reference only. Add a local project to access files (high-risk actions require approval).",
-    "composer.localGranted": "Local authorized", "composer.localRestricted": "Restricted",
+    "composer.localGranted": "Local PC", "composer.localRestricted": "Sandbox",
+    "composer.runSandbox": "Sandbox", "composer.runLocal": "Local PC",
+    "composer.runSandboxHint": "Built-in workspace only; no local project/system access",
+    "composer.runLocalHint": "Pick a folder for files, terminal, and system ops (exec mode applies)",
+    "composer.pickNeedLocal": "Switch to Local PC mode first, then use + to pick a folder",
+    "composer.pickCancelled": "Folder selection cancelled",
+    "composer.pickOk": "Local project connected; tools and knowledge base reloaded",
+    "composer.attachTitle": "Pick a local project folder",
     "composer.computer": "Computer", "composer.send": "Send", "composer.stop": "Stop",
     "exec.plan": "Plan", "exec.confirm": "Ask before edits", "exec.auto": "Auto-edit", "exec.full": "Full access",
     "exec.planHint": "Plan before editing.", "exec.confirmHint": "Ask before changing files.",
@@ -798,24 +813,36 @@ function activeProject() {
   return state.projects.find((p) => p.id === state.currentProjectId) || state.projects[0];
 }
 
+function currentRunMode() {
+  return state.runtime?.run_mode
+    || state.runtime?.capabilities?.run_mode
+    || "sandbox";
+}
+
 function updateComposerHint() {
   const hint = $("#composer-hint");
   if (!hint) return;
   const rt = state.runtime;
+  const mode = currentRunMode();
   const proj = activeProject();
-  if (!proj) {
-    hint.textContent = "点击左侧「添加本机项目」选择本地目录";
+  const modeMeta = execModeMeta(state.execMode);
+  const needsConfirm = state.execMode !== "full_access";
+
+  if (mode !== "local") {
+    hint.textContent = "当前为沙箱运行：仅内置工作区。切换到「本地电脑运行」后可用 + 选择本机文件夹。";
+    return;
+  }
+  if (!proj || !rt?.local_access?.enabled) {
+    hint.textContent = "本地电脑运行：点击输入框旁 + 选择本机项目文件夹（系统对话框）。";
     return;
   }
   const fs = (rt?.tools?.fs || []).length;
   const sys = (rt?.tools?.sys || []).length;
   const rag = state.health?.rag_enabled ? (state.health.rag?.chunks ?? 0) : 0;
   const fw = state.health?.framework || "agent";
-  const modeMeta = execModeMeta(state.execMode);
-  const needsConfirm = state.execMode !== "full_access";
   hint.textContent =
-    `链路协同: 文件 ${fs} 工具 → 知识库 ${rag} 块 → ${fw} 循环` +
-    (sys ? `｜sys_* ${sys}` : "") +
+    `本地电脑 · ${proj.name}｜文件 ${fs} → 知识库 ${rag} 块 → ${fw}` +
+    (sys ? `｜sys ${sys}` : "") +
     `｜${modeMeta.label}` +
     (needsConfirm ? "（写入/系统动作需确认）" : "（已授权范围内少确认）");
 }
@@ -892,13 +919,21 @@ function renderChainFooter() {
   }
   if (ragEl) ragEl.className = "cf-item cf-status cf-clickable " + (state.ragOk && ragCount > 0 ? "ready" : "warn");
 
-  const localOn = state.runtime?.local_access?.enabled;
+  const runMode = currentRunMode();
+  const localOn = !!state.runtime?.local_access?.enabled;
   if (accessText) {
-    accessText.textContent = localOn
-      ? t("composer.localGranted")
-      : t("composer.localRestricted");
+    if (runMode === "local" && localOn) accessText.textContent = t("composer.localGranted");
+    else if (runMode === "local") accessText.textContent = t("composer.runLocal");
+    else accessText.textContent = t("composer.runSandbox");
   }
-  if (accessEl) accessEl.className = "cf-item cf-status cf-clickable " + (localOn ? "ready" : "warn");
+  if (accessEl) {
+    const cls = runMode === "local" && !localOn ? "warn" : "ready";
+    accessEl.className = "cf-item cf-status cf-clickable " + cls;
+    accessEl.title = runMode === "local"
+      ? t("composer.runLocalHint")
+      : t("composer.runSandboxHint");
+  }
+  state.runMode = runMode;
 }
 
 function setSidebarPanel(panel) {
@@ -1142,15 +1177,20 @@ function renderProjects() {
   if (!box) return;
   box.innerHTML = "";
   const active = activeProject();
+  const runMode = currentRunMode();
   if ($("#current-project-name")) {
-    $("#current-project-name").textContent = active ? active.name : "未选择项目";
+    if (runMode !== "local") {
+      $("#current-project-name").textContent = "沙箱工作区";
+    } else {
+      $("#current-project-name").textContent = active ? active.name : "待选文件夹";
+    }
   }
 
   if (!state.projects.length) {
     const hint = document.createElement("div");
     hint.className = "sb-hint-text";
     hint.style.paddingLeft = "10px";
-    hint.textContent = "添加本机目录开始";
+    hint.textContent = runMode === "local" ? "点击 + 选择本机文件夹" : "沙箱模式 · 可切换到本地电脑";
     box.appendChild(hint);
     renderTaskList();
     return;
@@ -2059,6 +2099,134 @@ function openExecModeMenu() {
   }, 0);
 }
 
+let runModeMenu = null;
+function closeRunModeMenu() {
+  if (runModeMenu) {
+    runModeMenu.remove();
+    runModeMenu = null;
+  }
+}
+
+async function setRunMode(modeId) {
+  const mode = modeId === "local" ? "local" : "sandbox";
+  if (mode === currentRunMode()) {
+    closeRunModeMenu();
+    if (mode === "local" && !state.runtime?.local_access?.enabled) {
+      await pickLocalFolder();
+    }
+    return;
+  }
+  try {
+    const body = await api("/api/runtime/run-mode", {
+      method: "PUT",
+      body: JSON.stringify({ mode }),
+    });
+    state.runtime = body;
+    state.projects = body.projects || state.projects;
+    state.currentProjectId = body.active_project_id;
+    state.runMode = body.run_mode || mode;
+    syncExecModeFromRuntime();
+    renderProjects();
+    updateComposerHint();
+    await refreshChainStatus();
+    toast(mode === "local" ? t("composer.runLocal") : t("composer.runSandbox"), "ok");
+    if (mode === "local" && !body.local_access?.enabled) {
+      closeRunModeMenu();
+      await pickLocalFolder();
+      return;
+    }
+  } catch (err) {
+    toast(err.message, "error");
+  }
+  closeRunModeMenu();
+}
+
+function openRunModeMenu() {
+  closeRunModeMenu();
+  closeExecModeMenu();
+  closeThinkingPopover();
+  const btn = $("#cf-access-status");
+  if (!btn) return;
+  const rect = btn.getBoundingClientRect();
+  const current = currentRunMode();
+  const items = [
+    { id: "sandbox", label: t("composer.runSandbox"), hint: t("composer.runSandboxHint"), icon: "shield" },
+    { id: "local", label: t("composer.runLocal"), hint: t("composer.runLocalHint"), icon: "folder" },
+  ];
+  const menu = document.createElement("div");
+  menu.className = "exec-mode-menu";
+  menu.innerHTML = items.map((item) => {
+    const active = item.id === current;
+    return `
+      <button type="button" class="exec-mode-item ${active ? "active" : ""}" data-run-mode="${escapeHtml(item.id)}">
+        <span class="exec-ico-well" aria-hidden="true">
+          <svg class="exec-ico"><use href="#i-${escapeHtml(item.icon)}"/></svg>
+        </span>
+        <span class="exec-copy">
+          <span class="exec-title">${escapeHtml(item.label)}</span>
+          <span class="exec-hint">${escapeHtml(item.hint || "")}</span>
+        </span>
+        <span class="exec-check-well" aria-hidden="true">
+          <svg class="exec-check"><use href="#i-check"/></svg>
+        </span>
+      </button>`;
+  }).join("");
+  document.body.appendChild(menu);
+  const mw = menu.offsetWidth || 280;
+  menu.style.left = `${Math.max(8, Math.min(rect.left, window.innerWidth - mw - 8))}px`;
+  menu.style.top = `${Math.max(8, rect.top - 8)}px`;
+  menu.style.transform = "translateY(-100%)";
+  runModeMenu = menu;
+  menu.querySelectorAll("[data-run-mode]").forEach((el) => {
+    el.addEventListener("click", (e) => {
+      e.stopPropagation();
+      setRunMode(el.dataset.runMode);
+    });
+  });
+  setTimeout(() => {
+    document.addEventListener("click", function handler(e) {
+      if (!menu.contains(e.target) && e.target !== btn && !btn.contains(e.target)) {
+        closeRunModeMenu();
+        document.removeEventListener("click", handler);
+      }
+    });
+  }, 0);
+}
+
+async function pickLocalFolder() {
+  if (currentRunMode() !== "local") {
+    toast(t("composer.pickNeedLocal"), "error");
+    openRunModeMenu();
+    return;
+  }
+  try {
+    const picked = await api("/api/runtime/pick-folder", { method: "POST" });
+    if (picked.cancelled || !picked.path) {
+      toast(t("composer.pickCancelled"));
+      return;
+    }
+    const body = await api("/api/runtime/projects", {
+      method: "POST",
+      body: JSON.stringify({ path: picked.path, write: true }),
+    });
+    state.runtime = body;
+    state.projects = body.projects || [];
+    state.currentProjectId = body.active_project_id;
+    state.runMode = body.run_mode || "local";
+    syncExecModeFromRuntime();
+    renderProjects();
+    updateComposerHint();
+    await refreshChainStatus();
+    toast(t("composer.pickOk"), "ok");
+    try {
+      await api("/api/rag/index", { method: "POST" });
+      await refreshChainStatus();
+    } catch (_) { /* 索引失败不阻断接入 */ }
+  } catch (err) {
+    toast(err.message, "error");
+  }
+}
+
 async function openModelPicker() {
   try {
     await ModelSettings.loadCatalog();
@@ -2935,6 +3103,16 @@ function bindEvents() {
     e.stopPropagation();
     if (execModeMenu) closeExecModeMenu();
     else openExecModeMenu();
+  });
+  $("#btn-attach")?.addEventListener("click", (e) => {
+    e.stopPropagation();
+    pickLocalFolder();
+  });
+  $("#cf-access-status")?.addEventListener("click", (e) => {
+    e.stopPropagation();
+    e.preventDefault();
+    if (runModeMenu) closeRunModeMenu();
+    else openRunModeMenu();
   });
   $("#btn-agent-role")?.addEventListener("click", (e) => {
     e.stopPropagation();

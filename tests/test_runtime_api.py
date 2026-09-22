@@ -27,6 +27,7 @@ class RuntimeConfigMergeTests(unittest.TestCase):
                 projects=[ProjectEntry(id="p1", name="myapp", path=str(project), write=True)],
                 active_project_id="p1",
             )
+            state.set_run_mode("local")
             cfg = copy.deepcopy(DEFAULT_CONFIG)
             apply_runtime_to_config(cfg, state)
             self.assertEqual(cfg["server"]["workspace_root"], str(project.resolve()))
@@ -35,8 +36,35 @@ class RuntimeConfigMergeTests(unittest.TestCase):
             self.assertTrue(cfg["system"]["enabled"])
             self.assertIn("notify", cfg["system"]["allow_actions"])
 
+    def test_sandbox_mode_disables_local_even_with_projects(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            project = Path(tmp) / "myapp"
+            project.mkdir()
+            state = LocalRuntimeState(
+                projects=[ProjectEntry(id="p1", name="myapp", path=str(project), write=True)],
+                active_project_id="p1",
+            )
+            state.set_run_mode("sandbox")
+            cfg = copy.deepcopy(DEFAULT_CONFIG)
+            demo = str(Path(tmp) / "workspaces" / "demo")
+            cfg["server"]["workspace_root"] = demo
+            apply_runtime_to_config(cfg, state)
+            self.assertEqual(cfg["server"]["workspace_root"], demo)
+            self.assertFalse(cfg["local_access"]["enabled"])
+            self.assertEqual(cfg["local_access"]["roots"], [])
+            self.assertFalse(cfg["system"]["enabled"])
+
+    def test_local_without_project_stays_sandboxed(self):
+        state = LocalRuntimeState()
+        state.set_run_mode("local")
+        cfg = copy.deepcopy(DEFAULT_CONFIG)
+        root = cfg["server"]["workspace_root"]
+        apply_runtime_to_config(cfg, state)
+        self.assertEqual(cfg["server"]["workspace_root"], root)
+        self.assertFalse(cfg["local_access"]["enabled"])
+
     def test_apply_runtime_exec_mode_without_projects(self):
-        state = LocalRuntimeState(capabilities={"exec_mode": "plan"})
+        state = LocalRuntimeState(capabilities={"exec_mode": "plan", "run_mode": "sandbox"})
         cfg = copy.deepcopy(DEFAULT_CONFIG)
         apply_runtime_to_config(cfg, state)
         self.assertEqual(cfg["agent"]["exec_mode"], "plan")
@@ -111,12 +139,34 @@ class RuntimeApiTests(unittest.TestCase):
         })
         self.assertEqual(resp.status_code, 200)
         body = resp.json()
+        self.assertEqual(body["run_mode"], "local")
         self.assertTrue(body["local_access"]["enabled"])
         self.assertGreater(len(body["tools"]["fs"]), 0)
         self.assertEqual(body["workspace_root"], str(self.project.resolve()))
 
         health = self.client.get("/api/health")
         self.assertIn("fs_roots", health.json()["tools"])
+
+    def test_run_mode_sandbox_unmounts_local_tools(self):
+        self.client.post("/api/runtime/projects", json={"path": str(self.project)})
+        resp = self.client.put("/api/runtime/run-mode", json={"mode": "sandbox"})
+        self.assertEqual(resp.status_code, 200)
+        body = resp.json()
+        self.assertEqual(body["run_mode"], "sandbox")
+        self.assertFalse(body["local_access"]["enabled"])
+        self.assertEqual(body["tools"]["fs"], [])
+        self.assertNotEqual(body["workspace_root"], str(self.project.resolve()))
+
+    def test_pick_folder_cancelled(self):
+        import app.api.routes_runtime as rt_mod
+        orig = rt_mod.pick_directory
+        rt_mod.pick_directory = lambda title="": None
+        try:
+            resp = self.client.post("/api/runtime/pick-folder")
+            self.assertEqual(resp.status_code, 200)
+            self.assertTrue(resp.json()["cancelled"])
+        finally:
+            rt_mod.pick_directory = orig
 
     def test_capabilities_toggle_system(self):
         self.client.post("/api/runtime/projects", json={"path": str(self.project)})

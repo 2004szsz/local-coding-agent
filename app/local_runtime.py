@@ -18,12 +18,15 @@ from app.config import PROJECT_ROOT
 
 RUNTIME_FILE = PROJECT_ROOT / "data" / "local_runtime.json"
 
-# 桌面应用默认开启的能力（仍走审批闸，不自动放行 L4）
+# 本地电脑运行模式下的默认能力（仍走审批闸，不自动放行 L4）
 DEFAULT_CAPABILITIES: Dict[str, Any] = {
+    "run_mode": "sandbox",
     "local_access": True,
     "system": True,
     "allow_actions": ["notify", "open_path", "launch", "screenshot"],
 }
+
+RUN_MODES = frozenset({"sandbox", "local"})
 
 WORKSPACE_TOOL_NAMES = frozenset({
     "list_dir", "read_file", "write_file", "edit_file",
@@ -74,6 +77,24 @@ class LocalRuntimeState:
             "capabilities": self.capabilities,
         }
 
+    def run_mode(self) -> str:
+        mode = str((self.capabilities or {}).get("run_mode") or "sandbox").strip().lower()
+        return mode if mode in RUN_MODES else "sandbox"
+
+    def set_run_mode(self, mode: str) -> None:
+        normalized = str(mode or "").strip().lower()
+        if normalized not in RUN_MODES:
+            raise ValueError(f"run_mode 必须是 sandbox 或 local，收到: {mode}")
+        caps = dict(self.capabilities or DEFAULT_CAPABILITIES)
+        caps["run_mode"] = normalized
+        if normalized == "local":
+            # 切到本地时补齐本机能力开关；真正挂载仍取决于是否已选项目
+            caps.setdefault("local_access", True)
+            caps.setdefault("system", True)
+            if not caps.get("allow_actions"):
+                caps["allow_actions"] = list(DEFAULT_CAPABILITIES["allow_actions"])
+        self.capabilities = caps
+
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> "LocalRuntimeState":
         projects: List[ProjectEntry] = []
@@ -84,7 +105,14 @@ class LocalRuntimeState:
                 continue
         projects = [p for p in projects if Path(p.path).is_dir()]
         caps = dict(DEFAULT_CAPABILITIES)
-        caps.update(data.get("capabilities") or {})
+        raw_caps = data.get("capabilities") or {}
+        if isinstance(raw_caps, dict):
+            caps.update(raw_caps)
+        # 旧数据无 run_mode：有项目视为本地，否则沙箱
+        if "run_mode" not in (raw_caps or {}):
+            caps["run_mode"] = "local" if projects else "sandbox"
+        elif str(caps.get("run_mode") or "").strip().lower() not in RUN_MODES:
+            caps["run_mode"] = "local" if projects else "sandbox"
         active = data.get("active_project_id")
         if active and not any(p.id == active for p in projects):
             active = projects[0].id if projects else None
@@ -138,6 +166,18 @@ def _slug_name(name: str, used: set[str]) -> str:
     return candidate
 
 
+def _disable_local_channels(cfg: Dict[str, Any]) -> None:
+    """沙箱模式：关掉本机 fs_* / sys_*，工作区保持 yaml 默认根。"""
+    local = dict(cfg.get("local_access") or {})
+    local["enabled"] = False
+    local["roots"] = []
+    cfg["local_access"] = local
+    system = dict(cfg.get("system") or {})
+    system["enabled"] = False
+    system["allow_actions"] = []
+    cfg["system"] = system
+
+
 def apply_runtime_to_config(cfg: Dict[str, Any], state: LocalRuntimeState) -> Dict[str, Any]:
     """
     把运行时项目/能力合并进配置字典（不修改 config.yaml 文件）。
@@ -145,25 +185,35 @@ def apply_runtime_to_config(cfg: Dict[str, Any], state: LocalRuntimeState) -> Di
     始终应用：
     - agent.exec_mode → 工作台四档执行模式（无选中时保持 yaml）
 
-    有已保存项目时：
+    run_mode=sandbox：
+    - 不覆盖 workspace_root；强制关闭 local_access / system
+
+    run_mode=local 且已有激活项目：
     - workspace_root → 当前激活项目路径
     - local_access.enabled + roots → 全部项目目录
     - system.enabled + allow_actions → capabilities 段
+
+    run_mode=local 但尚未选目录：
+    - 与沙箱相同（不挂本机通道），等待「+」选文件夹
     """
     caps = state.capabilities or {}
-    mode = str(caps.get("exec_mode") or "").strip()
-    if mode:
+    exec_mode = str(caps.get("exec_mode") or "").strip()
+    if exec_mode:
         agent = dict(cfg.get("agent") or {})
-        agent["exec_mode"] = mode
+        agent["exec_mode"] = exec_mode
         cfg["agent"] = agent
+
+    if state.run_mode() != "local":
+        _disable_local_channels(cfg)
+        return cfg
 
     active = state.active_project()
     if active is None:
+        _disable_local_channels(cfg)
         return cfg
 
     cfg["server"]["workspace_root"] = active.path
 
-    caps = state.capabilities or {}
     local = dict(cfg.get("local_access") or {})
     local["enabled"] = bool(caps.get("local_access", True))
     used_names: set[str] = set()

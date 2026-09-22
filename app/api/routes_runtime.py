@@ -5,7 +5,9 @@
 POST /api/runtime/projects          添加本机目录为项目
 POST /api/runtime/projects/{id}/activate  切换当前工作区并热重载工具
 PUT  /api/runtime/capabilities      开关系统数据 / 系统动作
-GET  /api/runtime/browse            文件夹选择器
+PUT  /api/runtime/run-mode          沙箱 / 本地电脑运行模式
+POST /api/runtime/pick-folder       系统文件夹对话框
+GET  /api/runtime/browse            文件夹选择器（应用内浏览）
 """
 from __future__ import annotations
 
@@ -19,6 +21,7 @@ from starlette.concurrency import run_in_threadpool
 
 from agents.runtime_reload import reconfigure_runtime, runtime_status
 from app.config import load_config
+from app.folder_dialog import pick_directory
 from app.local_runtime import (
     DEFAULT_CAPABILITIES,
     LocalRuntimeState,
@@ -43,6 +46,22 @@ class CapabilitiesUpdate(BaseModel):
     system: Optional[bool] = None
     allow_actions: Optional[List[str]] = None
     exec_mode: Optional[str] = None
+    run_mode: Optional[str] = None
+
+
+class RunModeUpdate(BaseModel):
+    mode: str = Field(..., description="sandbox | local")
+
+
+def _path_denied(path: str) -> bool:
+    from tools.fs_access import DENIED_PREFIXES
+
+    cmp = os.path.normcase(str(path)).rstrip("\\/")
+    for prefix in DENIED_PREFIXES:
+        norm = os.path.normcase(str(prefix)).rstrip("\\/")
+        if cmp == norm or cmp.startswith(norm + os.sep):
+            return True
+    return False
 
 
 def _reload_app(request: Request, state: LocalRuntimeState) -> Dict[str, Any]:
@@ -94,13 +113,8 @@ async def browse_dirs(path: str = ""):
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     if not resolved.is_dir():
         raise HTTPException(status_code=404, detail="不是目录")
-
-    from tools.fs_access import DENIED_PREFIXES
-    cmp = os.path.normcase(str(resolved)).rstrip("\\/")
-    for prefix in DENIED_PREFIXES:
-        norm = os.path.normcase(str(prefix)).rstrip("\\/")
-        if cmp == norm or cmp.startswith(norm + os.sep):
-            raise HTTPException(status_code=403, detail="该路径在拒绝清单内")
+    if _path_denied(str(resolved)):
+        raise HTTPException(status_code=403, detail="该路径在拒绝清单内")
 
     entries: List[Dict[str, str]] = []
     try:
@@ -118,6 +132,33 @@ async def browse_dirs(path: str = ""):
     return {"path": str(resolved), "entries": entries, "parent": parent}
 
 
+@router.post("/pick-folder")
+async def pick_folder():
+    """弹出本机系统「选择文件夹」对话框。"""
+    try:
+        path = await run_in_threadpool(pick_directory, "选择本地项目文件夹")
+    except RuntimeError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    if not path:
+        return {"cancelled": True, "path": None}
+    resolved = Path(path).resolve()
+    if not resolved.is_dir():
+        raise HTTPException(status_code=400, detail=f"不是有效目录: {path}")
+    if _path_denied(str(resolved)):
+        raise HTTPException(status_code=403, detail="该路径在拒绝清单内")
+    return {"cancelled": False, "path": str(resolved)}
+
+
+@router.put("/run-mode")
+async def set_run_mode(body: RunModeUpdate, request: Request):
+    state = load_runtime_state()
+    try:
+        state.set_run_mode(body.mode)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return await run_in_threadpool(_reload_app, request, state)
+
+
 @router.post("/projects")
 async def add_project(body: ProjectCreate, request: Request):
     state = load_runtime_state()
@@ -131,15 +172,24 @@ async def add_project(body: ProjectCreate, request: Request):
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     if not Path(project.path).is_dir():
         raise HTTPException(status_code=400, detail=f"目录不存在: {project.path}")
+    if _path_denied(project.path):
+        raise HTTPException(status_code=403, detail="该路径在拒绝清单内")
 
     for existing in state.projects:
         if os.path.normcase(existing.path) == os.path.normcase(project.path):
-            raise HTTPException(status_code=409, detail="该项目目录已添加")
+            state.active_project_id = existing.id
+            state.set_run_mode("local")
+            return await run_in_threadpool(_reload_app, request, state)
 
     state.projects.append(project)
     state.active_project_id = project.id
-    if not state.capabilities:
-        state.capabilities = dict(DEFAULT_CAPABILITIES)
+    state.set_run_mode("local")
+    caps = dict(state.capabilities or DEFAULT_CAPABILITIES)
+    caps.setdefault("local_access", True)
+    caps.setdefault("system", True)
+    if not caps.get("allow_actions"):
+        caps["allow_actions"] = list(DEFAULT_CAPABILITIES["allow_actions"])
+    state.capabilities = caps
     return await run_in_threadpool(_reload_app, request, state)
 
 
@@ -149,6 +199,7 @@ async def activate_project(project_id: str, request: Request):
     if state.find(project_id) is None:
         raise HTTPException(status_code=404, detail="项目不存在")
     state.active_project_id = project_id
+    state.set_run_mode("local")
     return await run_in_threadpool(_reload_app, request, state)
 
 
@@ -161,6 +212,8 @@ async def remove_project(project_id: str, request: Request):
         raise HTTPException(status_code=404, detail="项目不存在")
     if state.active_project_id == project_id:
         state.active_project_id = state.projects[0].id if state.projects else None
+    if not state.projects:
+        state.set_run_mode("sandbox")
     return await run_in_threadpool(_reload_app, request, state)
 
 
@@ -168,6 +221,12 @@ async def remove_project(project_id: str, request: Request):
 async def update_capabilities(body: CapabilitiesUpdate, request: Request):
     state = load_runtime_state()
     caps = dict(state.capabilities or DEFAULT_CAPABILITIES)
+    if body.run_mode is not None:
+        try:
+            state.set_run_mode(body.run_mode)
+            caps = dict(state.capabilities)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
     if body.local_access is not None:
         caps["local_access"] = body.local_access
     if body.system is not None:
