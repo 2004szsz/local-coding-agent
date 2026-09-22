@@ -129,6 +129,11 @@ async def path_traversal_handler(request: Request, exc: PathTraversalError):
     return JSONResponse(status_code=403, content={"ok": False, "detail": str(exc)})
 
 
+def _health_exec_modes():
+    from agents.state_loop.permissions import exec_mode_catalog
+    return exec_mode_catalog()
+
+
 @app.get("/api/health")
 async def health(request: Request):
     """健康检查：返回框架、工具、RAG、MCP 与模型注册表衔接状态（不探测 LLM 连通性）。"""
@@ -154,6 +159,7 @@ async def health(request: Request):
         ),
         "mcp": state.mcp.status() if getattr(state, "mcp", None) else [],
         "exec_mode": str(getattr(loop_deps, "mode", "")) or None,
+        "exec_modes": _health_exec_modes(),
         "models": runtime_model_summary(state.runtime, state.cfg),
         "model_integration": integration_summary(reg, state.cfg),
         "usage": get_usage_tracker().summary(

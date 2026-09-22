@@ -92,7 +92,29 @@ MODE_POLICY: Dict[ExecMode, Dict[Effect, Policy]] = {
         Effect.L4_MCP_MUTATE: Policy.confirm,
         Effect.L5_ESCAPE: Policy.deny,
     },
+    # 减少确认：已授权范围内的 L0–L4 自动放行。L5 与路径门闩仍硬拒绝。
+    ExecMode.full_access: {
+        Effect.L0_READ: Policy.auto,
+        Effect.L1_WRITE: Policy.auto,
+        Effect.L2_SANDBOX: Policy.auto,
+        Effect.L3_COMMAND: Policy.auto,
+        Effect.L4_MCP_MUTATE: Policy.auto,
+        Effect.L5_ESCAPE: Policy.deny,
+    },
 }
+
+#: 工作台四档选择器（标签与截图一致）。id 必须是 ExecMode 取值。
+EXEC_MODE_CATALOG = (
+    {"id": "plan", "label": "计划模式", "hint": "编辑前先出计划。", "icon": "bulb"},
+    {"id": "confirm_writes", "label": "变更前确认", "hint": "改文件前先问我。", "icon": "hand"},
+    {"id": "auto_workspace", "label": "自动编辑", "hint": "自动编辑文件。", "icon": "shield"},
+    {"id": "full_access", "label": "完全访问", "hint": "减少确认次数。", "icon": "shield"},
+)
+
+
+def exec_mode_catalog() -> list:
+    """前端 /api/health 与 /api/runtime 共用的执行档清单。"""
+    return [dict(item) for item in EXEC_MODE_CATALOG]
 
 #: 内置工具的副作用等级。新增内置工具必须在这里登记，否则会被按 L4 保守处理。
 TOOL_EFFECTS: Dict[str, Effect] = {

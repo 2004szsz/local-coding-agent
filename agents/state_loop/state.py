@@ -71,11 +71,18 @@ class HaltReason(str, Enum):
 
 
 class ExecMode(str, Enum):
-    """执行档。只保留三档，且**不提供「完全访问」**（见架构文档第 6.4 节）。"""
+    """
+    执行档（对齐工作台四档选择器）。
 
-    auto_workspace = "auto_workspace"
-    confirm_writes = "confirm_writes"
+    `full_access` 只减少 L4 确认次数，**不关掉 L5**：工作区越界、解释器
+    `-c` 逃逸、未授权本机路径一律拒绝。本机读写仍走 WorkspaceSecurity /
+    AccessBroker。
+    """
+
     plan = "plan"
+    confirm_writes = "confirm_writes"
+    auto_workspace = "auto_workspace"
+    full_access = "full_access"
 
     def __str__(self) -> str:
         return self.value

@@ -35,6 +35,12 @@ class RuntimeConfigMergeTests(unittest.TestCase):
             self.assertTrue(cfg["system"]["enabled"])
             self.assertIn("notify", cfg["system"]["allow_actions"])
 
+    def test_apply_runtime_exec_mode_without_projects(self):
+        state = LocalRuntimeState(capabilities={"exec_mode": "plan"})
+        cfg = copy.deepcopy(DEFAULT_CONFIG)
+        apply_runtime_to_config(cfg, state)
+        self.assertEqual(cfg["agent"]["exec_mode"], "plan")
+
 
 class VanishedProjectTests(unittest.TestCase):
     def test_from_dict_drops_missing_project_dirs(self):
@@ -122,6 +128,22 @@ class RuntimeApiTests(unittest.TestCase):
             self.assertGreater(len(tools), 0)
         except ImportError:
             self.assertEqual(tools, [])
+
+    def test_exec_mode_full_access_hot_reload(self):
+        self.client.post("/api/runtime/projects", json={"path": str(self.project)})
+        resp = self.client.put("/api/runtime/capabilities", json={
+            "exec_mode": "full_access",
+        })
+        self.assertEqual(resp.status_code, 200)
+        body = resp.json()
+        self.assertEqual(body["exec_mode"], "full_access")
+        self.assertEqual(body["capabilities"]["exec_mode"], "full_access")
+        ids = [m["id"] for m in body.get("exec_modes") or []]
+        self.assertEqual(ids, ["plan", "confirm_writes", "auto_workspace", "full_access"])
+
+        health = self.client.get("/api/health").json()
+        self.assertEqual(health["exec_mode"], "full_access")
+        self.assertIn("full_access", [m["id"] for m in health.get("exec_modes") or []])
 
 
 if __name__ == "__main__":

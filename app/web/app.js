@@ -21,6 +21,8 @@ const state = {
   currentFile: null,
   ragOk: false,
   reasoningLevel: "medium",
+  execMode: "auto_workspace",
+  execModes: null,
   activeMode: "office",
   agentRole: "fullstack",
   sidebarPanel: "projects",
@@ -81,6 +83,10 @@ const I18N = {
     "composer.placeholder": "今天帮你做些什么？@ 引用文件与对话，/ 调用技能与指令",
     "composer.hint": "AI 生成内容仅供参考；添加本机项目后可读写桌面、D 盘等目录（高权限操作需确认）",
     "composer.fullAccess": "完全访问", "composer.computer": "电脑操作", "composer.send": "发送", "composer.stop": "停止",
+    "exec.plan": "计划模式", "exec.confirm": "变更前确认", "exec.auto": "自动编辑", "exec.full": "完全访问",
+    "exec.planHint": "编辑前先出计划。", "exec.confirmHint": "改文件前先问我。",
+    "exec.autoHint": "自动编辑文件。", "exec.fullHint": "减少确认次数。",
+    "toast.execMode": "执行档已切换为 {n}",
     "quick.weekly": "周报总结", "quick.fix": "报错修复", "quick.ppt": "PPT 制作",
     "quick.idle": "闲时任务", "quick.rag": "源码检索", "quick.design": "界面设计",
     "account.name": "旅行者6172", "account.guest": "未登录", "account.pro": "Pro",
@@ -137,6 +143,10 @@ const I18N = {
     "composer.placeholder": "What can I help with today? @ files & context, / skills & commands.",
     "composer.hint": "AI output is for reference only. Add a local project to access files (high-risk actions require approval).",
     "composer.fullAccess": "Full Access", "composer.computer": "Computer", "composer.send": "Send", "composer.stop": "Stop",
+    "exec.plan": "Plan", "exec.confirm": "Ask before edits", "exec.auto": "Auto-edit", "exec.full": "Full access",
+    "exec.planHint": "Plan before editing.", "exec.confirmHint": "Ask before changing files.",
+    "exec.autoHint": "Edit files automatically.", "exec.fullHint": "Fewer confirmations.",
+    "toast.execMode": "Exec mode set to {n}",
     "quick.weekly": "Weekly Report", "quick.fix": "Fix Errors", "quick.ppt": "Create PPT",
     "quick.idle": "Idle Tasks", "quick.rag": "Code Search", "quick.design": "UI Design",
     "account.name": "Traveler 6172", "account.guest": "Signed Out", "account.pro": "Pro",
@@ -188,6 +198,7 @@ function applyI18n() {
   setGreeting();
   updateAccountDock();
   updateAgentRoleLabel();
+  updateExecModeUI();
   if ($("#view-settings").classList.contains("active")) renderPage(state.currentPage);
 }
 
@@ -771,6 +782,7 @@ async function loadRuntime(silent = false) {
     state.runtime = await api("/api/runtime");
     state.projects = state.runtime.projects || [];
     state.currentProjectId = state.runtime.active_project_id;
+    syncExecModeFromRuntime();
     renderProjects();
     updateComposerHint();
     await refreshChainStatus();
@@ -797,10 +809,13 @@ function updateComposerHint() {
   const sys = (rt?.tools?.sys || []).length;
   const rag = state.health?.rag_enabled ? (state.health.rag?.chunks ?? 0) : 0;
   const fw = state.health?.framework || "agent";
+  const modeMeta = execModeMeta(state.execMode);
+  const needsConfirm = state.execMode !== "full_access";
   hint.textContent =
     `链路协同: 文件 ${fs} 工具 → 知识库 ${rag} 块 → ${fw} 循环` +
     (sys ? `｜sys_* ${sys}` : "") +
-    "（写入/系统动作需确认）";
+    `｜${modeMeta.label}` +
+    (needsConfirm ? "（写入/系统动作需确认）" : "（已授权范围内少确认）");
 }
 
 function toolChainKind(name) {
@@ -830,6 +845,7 @@ async function refreshChainStatus() {
   }
   renderChainStrip();
   renderChainFooter();
+  syncExecModeFromRuntime();
   if (window.ChainModules) window.ChainModules.refresh();
 }
 
@@ -1903,6 +1919,133 @@ async function openThinkingPopover() {
   }, 0);
 }
 
+/* ---------------- 执行档（计划 / 变更前确认 / 自动编辑 / 完全访问） ---------------- */
+const EXEC_MODE_FALLBACK = [
+  { id: "plan", labelKey: "exec.plan", hintKey: "exec.planHint", icon: "bulb" },
+  { id: "confirm_writes", labelKey: "exec.confirm", hintKey: "exec.confirmHint", icon: "hand" },
+  { id: "auto_workspace", labelKey: "exec.auto", hintKey: "exec.autoHint", icon: "shield" },
+  { id: "full_access", labelKey: "exec.full", hintKey: "exec.fullHint", icon: "shield" },
+];
+
+function execModeCatalog() {
+  const remote = state.execModes || state.runtime?.exec_modes || state.health?.exec_modes;
+  if (Array.isArray(remote) && remote.length) {
+    return remote.map((item) => ({
+      id: item.id,
+      label: item.label || item.id,
+      hint: item.hint || "",
+      icon: item.icon || "shield",
+    }));
+  }
+  return EXEC_MODE_FALLBACK.map((item) => ({
+    id: item.id,
+    label: t(item.labelKey),
+    hint: t(item.hintKey),
+    icon: item.icon,
+  }));
+}
+
+function execModeMeta(id) {
+  const catalog = execModeCatalog();
+  return catalog.find((m) => m.id === id) || catalog.find((m) => m.id === "auto_workspace") || catalog[0];
+}
+
+function syncExecModeFromRuntime() {
+  const mode = state.runtime?.exec_mode
+    || state.runtime?.capabilities?.exec_mode
+    || state.health?.exec_mode
+    || state.execMode
+    || "auto_workspace";
+  state.execMode = mode;
+  if (state.runtime?.exec_modes) state.execModes = state.runtime.exec_modes;
+  else if (state.health?.exec_modes) state.execModes = state.health.exec_modes;
+  updateExecModeUI();
+}
+
+function updateExecModeUI() {
+  const meta = execModeMeta(state.execMode);
+  const label = $("#exec-mode-label");
+  const icon = $("#exec-mode-icon");
+  if (label) label.textContent = meta.label;
+  if (icon) icon.setAttribute("href", `#i-${meta.icon || "shield"}`);
+  const btn = $("#btn-exec-mode");
+  if (btn) btn.title = meta.hint || meta.label;
+}
+
+let execModeMenu = null;
+function closeExecModeMenu() {
+  if (execModeMenu) {
+    execModeMenu.remove();
+    execModeMenu = null;
+  }
+}
+
+async function setExecMode(modeId) {
+  const meta = execModeMeta(modeId);
+  if (!meta || meta.id === state.execMode) {
+    closeExecModeMenu();
+    return;
+  }
+  try {
+    const body = await api("/api/runtime/capabilities", {
+      method: "PUT",
+      body: JSON.stringify({ exec_mode: meta.id }),
+    });
+    state.runtime = body;
+    state.projects = body.projects || state.projects;
+    state.execMode = body.exec_mode || meta.id;
+    if (body.exec_modes) state.execModes = body.exec_modes;
+    updateExecModeUI();
+    updateComposerHint();
+    toast(t("toast.execMode").replace("{n}", execModeMeta(state.execMode).label), "ok");
+  } catch (err) {
+    toast(err.message, "error");
+  }
+  closeExecModeMenu();
+}
+
+function openExecModeMenu() {
+  closeExecModeMenu();
+  closeThinkingPopover();
+  const btn = $("#btn-exec-mode");
+  if (!btn) return;
+  const rect = btn.getBoundingClientRect();
+  const menu = document.createElement("div");
+  menu.className = "exec-mode-menu";
+  menu.innerHTML = execModeCatalog().map((item) => {
+    const active = item.id === state.execMode;
+    return `
+      <button type="button" class="exec-mode-item ${active ? "active" : ""}" data-mode="${escapeHtml(item.id)}">
+        <svg class="exec-ico"><use href="#i-${escapeHtml(item.icon || "shield")}"/></svg>
+        <span class="exec-copy">
+          <span class="exec-title">${escapeHtml(item.label)}</span>
+          <span class="exec-hint">${escapeHtml(item.hint || "")}</span>
+        </span>
+        <svg class="exec-check"><use href="#i-check"/></svg>
+      </button>`;
+  }).join("");
+  document.body.appendChild(menu);
+  const mw = menu.offsetWidth || 260;
+  menu.style.left = `${Math.max(8, Math.min(rect.right - mw, window.innerWidth - mw - 8))}px`;
+  menu.style.top = `${Math.max(8, rect.top - 8)}px`;
+  menu.style.transform = "translateY(-100%)";
+  execModeMenu = menu;
+  menu.querySelectorAll("[data-mode]").forEach((el) => {
+    el.addEventListener("click", (e) => {
+      e.stopPropagation();
+      setExecMode(el.dataset.mode);
+    });
+  });
+  setTimeout(() => {
+    document.addEventListener("click", function handler(e) {
+      if (!menu.contains(e.target) && e.target !== btn && !btn.contains(e.target)) {
+        closeExecModeMenu();
+        document.removeEventListener("click", handler);
+      }
+    });
+  }, 0);
+}
+
 async function openModelPicker() {
   try {
     await ModelSettings.loadCatalog();
@@ -2717,6 +2860,8 @@ function bindEvents() {
     if (e.key === "Escape") {
       closeCtxMenu();
       closeTraceModal();
+      closeExecModeMenu();
+      closeThinkingPopover();
     }
   });
   $("#btn-trace-close")?.addEventListener("click", closeTraceModal);
@@ -2772,6 +2917,11 @@ function bindEvents() {
     e.stopPropagation();
     if (thinkPopover) closeThinkingPopover();
     else openThinkingPopover();
+  });
+  $("#btn-exec-mode")?.addEventListener("click", (e) => {
+    e.stopPropagation();
+    if (execModeMenu) closeExecModeMenu();
+    else openExecModeMenu();
   });
   $("#btn-agent-role")?.addEventListener("click", (e) => {
     e.stopPropagation();

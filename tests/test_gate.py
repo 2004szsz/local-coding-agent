@@ -76,6 +76,16 @@ class AuthorizeToolTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(output, "ran")
         self.assertEqual(len(executed), 1)
 
+    async def test_full_access_allows_l4_without_confirm(self):
+        registry, executed = _registry_with("fs_write")
+        decision = await authorize_tool(
+            "fs_write", {"root": "d", "path": "a.txt"},
+            registry=registry, workspace=self.workspace, confirm_handler=None,
+            mode=ExecMode.full_access)
+        self.assertTrue(decision.allowed)
+        self.assertEqual(decision.events, ())
+        self.assertEqual(executed, [])
+
     async def test_l4_deny_does_not_execute(self):
         registry, executed = _registry_with("fs_write")
 

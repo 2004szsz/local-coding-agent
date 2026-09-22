@@ -208,3 +208,87 @@
   border-bottom: 1px solid var(--border);
   transform: translateX(-50%) rotate(45deg);
 }
+
+.cb-btn.exec-pick {
+  gap: 6px;
+  min-width: 0;
+  max-width: 140px;
+  border: 1px solid var(--border);
+  background: linear-gradient(180deg, var(--card-bg) 0%, var(--soft-bg) 100%);
+}
+
+.exec-mode-menu {
+  position: fixed;
+  z-index: 190;
+  min-width: 260px;
+  padding: 6px;
+  background: var(--card-bg);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  box-shadow:
+    0 18px 40px rgba(15, 23, 42, 0.16),
+    inset 0 1px 0 rgba(255, 255, 255, 0.7);
+}
+
+.exec-mode-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  width: 100%;
+  text-align: left;
+  padding: 10px 12px;
+  border: 0;
+  background: transparent;
+  border-radius: 10px;
+  color: var(--text);
+  cursor: pointer;
+}
+
+.exec-mode-item:hover {
+  background: var(--soft-bg);
+}
+
+.exec-mode-item.active {
+  background: rgba(15, 23, 42, 0.04);
+}
+
+.exec-mode-item .exec-ico {
+  width: 20px;
+  height: 20px;
+  flex: 0 0 20px;
+  margin-top: 1px;
+  color: var(--text-2);
+}
+
+.exec-mode-item .exec-copy {
+  flex: 1;
+  min-width: 0;
+}
+
+.exec-mode-item .exec-title {
+  display: block;
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 1.3;
+}
+
+.exec-mode-item .exec-hint {
+  display: block;
+  margin-top: 2px;
+  font-size: 12px;
+  color: var(--text-3);
+  line-height: 1.35;
+}
+
+.exec-mode-item .exec-check {
+  width: 16px;
+  height: 16px;
+  flex: 0 0 16px;
+  margin-top: 3px;
+  color: var(--text);
+  opacity: 0;
+}
+
+.exec-mode-item.active .exec-check {
+  opacity: 1;
+}

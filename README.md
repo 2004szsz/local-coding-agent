@@ -111,8 +111,8 @@ framework: "native_react"   # state_loop | native_react | autogen | llamaindex |
 - `native_react`：默认，零额外依赖的手写精简 ReAct，资源占用最低；模型不支持强制函数调用时它有文本动作兜底，因此**默认框架刻意保守地留给了它**。
 - `autogen` / `llamaindex` / `crewai`：可选框架，首次切换时按 `requirements.txt` 末尾注释安装对应依赖即可；**统一工具集无需任何改动**
 - 若配置残留 `langgraph`，启动时会明确报错并提示替代方案，不会静默回退
-- 执行档三选一：`auto_workspace`（默认，工作区内自动执行，改外部系统需确认）/ `confirm_writes`（写盘与命令都要确认）/ `plan`（先出计划待确认）。**不提供「完全访问」档**
-- 本机文件与系统数据在 `config.yaml` 的 `local_access` / `system`：默认关闭；开启后只读可直接用，写入与系统动作走同一条审批通道（`native_react` 与 `state_loop` 都会弹出确认卡片，60 秒未答复 = 拒绝）
+- 执行档四选一：`plan`（先出计划待确认）/ `confirm_writes`（写盘与命令都要确认）/ `auto_workspace`（默认，工作区内自动，改外部系统需确认）/ `full_access`（减少确认次数；**不关闭 L5 越界拒绝**）。工作台输入栏可热切换，写入 `data/local_runtime.json`。
+- 本机文件与系统数据在 `config.yaml` 的 `local_access` / `system`：默认关闭；开启后只读可直接用，写入与系统动作走同一条审批通道（`native_react` 与 `state_loop` 都会弹出确认卡片，60 秒未答复 = 拒绝）；`full_access` 下已授权范围内的 L4 可自动执行
 - MCP 工具在 `config.yaml` 的 `mcp.servers` 里配置；它不依赖具体框架，与内置工具共用同一套权限判定与事件流
 
 技能开关在同一文件的 `skills` 列表。关掉某个技能后，它声明的工具不会再交给模型。例如去掉 `code_interpreter` 后，就不能再 `edit_file`、`write_file` 或 `run_python_code`。提示词在 `prompts/system.md`、`prompts/task.md`、`prompts/examples.md`。`role` 和 `goals` 会一并写入系统提示词。

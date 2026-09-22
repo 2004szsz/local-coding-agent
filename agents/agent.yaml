@@ -16,7 +16,9 @@ framework: native_react
 max_iterations: 12
 
 # ---- 自研 state_loop 运行时的可选配置（其他框架忽略这些键）----
-exec_mode: auto_workspace    # auto_workspace | confirm_writes | plan
+exec_mode: auto_workspace    # plan | confirm_writes | auto_workspace | full_access
+                             # 工作台可覆盖并写入 data/local_runtime.json
+                             # full_access 减少 L4 确认，不关闭 L5 / 路径门闩
 max_replan: 2                # 任务图重做次数上限
 max_attempts: 3              # 单任务验证尝试上限（只在验收失败或回滚时消耗）
 context_char_budget: 24000   # 上下文预算基准；软阈值 70% 触发压缩，硬阈值 92% 停机

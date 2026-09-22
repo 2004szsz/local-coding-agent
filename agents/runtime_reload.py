@@ -17,6 +17,8 @@ from agents.agent import (
     _select_tools,
     compose_system_prompt,
     load_agent_spec,
+    resolve_exec_mode,
+    resolve_framework,
 )
 from app.local_runtime import WORKSPACE_TOOL_NAMES
 from skills import tools_for_skills
@@ -89,7 +91,6 @@ def reconfigure_runtime(
 
     broker = _build_local_access(cfg, runtime.tools, skill_names, workspace)
 
-    from agents.agent import resolve_framework
     framework_name = resolve_framework(spec, cfg)
     pref_section = ""
     if runtime.preferences is not None:
@@ -129,6 +130,8 @@ def reconfigure_runtime(
         loop.allowed_tools = tuple(filtered.names())
         if confirm_handler is not None:
             loop.confirm_handler = confirm_handler
+        loop.mode = resolve_exec_mode(spec, cfg)
+        loop.plan_confirmed = False
 
     agent = runtime.agent
     if agent is not None and hasattr(agent, "deps"):
@@ -192,7 +195,15 @@ def runtime_status(runtime: Runtime, cfg: Dict[str, Any],
             "sys": [n for n in tool_names if n.startswith("sys_")],
             "workspace": [n for n in tool_names if n in WORKSPACE_TOOL_NAMES],
         },
+        "exec_mode": str(getattr(runtime.loop_deps, "mode", "") or
+                         (state.capabilities or {}).get("exec_mode") or ""),
+        "exec_modes": _exec_mode_catalog(),
     }
+
+
+def _exec_mode_catalog():
+    from agents.state_loop.permissions import exec_mode_catalog
+    return exec_mode_catalog()
 
 
 def _psutil_ok() -> bool:

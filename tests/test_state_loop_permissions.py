@@ -233,6 +233,17 @@ class AuthorizeTests(unittest.TestCase):
         self.assertTrue(self.authorize(
             [ToolCall("c1", "mcp_docs_create", {})]).needs_confirm)
 
+    def test_full_access_auto_allows_l4_but_still_denies_escape(self):
+        self.assertTrue(self.authorize(
+            [ToolCall("c1", "mcp_docs_create", {})],
+            mode=ExecMode.full_access).granted)
+        self.assertTrue(self.authorize(
+            [ToolCall("c1", "fs_write", {"root": "r", "path": "a.txt"})],
+            mode=ExecMode.full_access, scope=("r:a.txt",)).granted)
+        self.assertTrue(self.authorize(
+            [ToolCall("c1", "write_file", {"path": "../x.txt"})],
+            mode=ExecMode.full_access).denied)
+
     def test_escape_is_denied_in_every_mode(self):
         for mode in ExecMode:
             with self.subTest(mode=mode):

@@ -199,6 +199,19 @@ def resolve_framework(spec: Dict[str, Any], cfg: Dict[str, Any] | None = None) -
     return DEFAULT_FRAMEWORK
 
 
+def resolve_exec_mode(spec: Dict[str, Any], cfg: Dict[str, Any] | None = None):
+    """
+    执行档：运行时能力（本机项目页选择）优先，其次 agent.yaml。
+    未知取值由 ExecMode.parse 落到 auto_workspace，不让服务起不来。
+    """
+    from agents.state_loop.state import ExecMode
+
+    runtime_mode = None
+    if cfg:
+        runtime_mode = (cfg.get("agent") or {}).get("exec_mode")
+    return ExecMode.parse(runtime_mode or spec.get("exec_mode"))
+
+
 # ======================================================================
 # 工具与技能
 # ======================================================================
@@ -349,10 +362,9 @@ def _build_loop_deps(spec: Dict[str, Any], cfg: Dict[str, Any], *, llm, tools, w
                      confirm_handler=None) -> Any:
     """构造 state_loop 的依赖包。**只对它自己有意义的键**都从 agent.yaml 读。"""
     from agents.state_loop.runtime import LoopDeps, build_limits
-    from agents.state_loop.state import ExecMode
 
     limits = build_limits(spec, cfg)
-    mode = ExecMode.parse(spec.get("exec_mode"))
+    mode = resolve_exec_mode(spec, cfg)
     return LoopDeps(
         llm=llm,
         registry=tools,

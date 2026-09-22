@@ -86,6 +86,8 @@ class LoopDeps:
     runner: Optional[WorkspaceCommandRunner] = None
     config: LoopLimits = DEFAULT_LIMITS
     mode: ExecMode = ExecMode.auto_workspace
+    #: native_react 在 plan 档下：本轮已确认过计划后，后续按 auto_workspace 走。
+    plan_confirmed: bool = False
     system_prompt: str = ""
     allowed_tools: Tuple[str, ...] = ()
     rag_available: bool = False

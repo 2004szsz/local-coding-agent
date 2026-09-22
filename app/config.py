@@ -235,11 +235,11 @@ def load_config(path: str | os.PathLike = "config.yaml") -> Dict[str, Any]:
             f"请使用 127.0.0.1。"
         )
 
-    # 运行时项目/能力（data/local_runtime.json）覆盖 workspace 与 local_access/system
+    # 运行时项目/能力（data/local_runtime.json）覆盖 workspace、local_access、exec_mode
     from app.local_runtime import apply_runtime_to_config, load_runtime_state
     runtime_state = load_runtime_state()
+    apply_runtime_to_config(cfg, runtime_state)
     if runtime_state.projects:
-        apply_runtime_to_config(cfg, runtime_state)
         cfg["server"]["workspace_root"] = _abs_path(cfg["server"]["workspace_root"])
 
     # 自动创建必需目录

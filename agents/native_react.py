@@ -75,6 +75,7 @@ class NativeReActAgent(BaseAgent):
             confirm_handler=loop_confirm_handler(deps),
             mode=loop_mode(deps),
             call_id=call_id,
+            loop_deps=getattr(deps, "loop_deps", None),
         )
         events = list(decision.events)
         if not decision.allowed:
@@ -84,6 +85,9 @@ class NativeReActAgent(BaseAgent):
 
     async def astream_run(self, history: List[Dict[str, Any]]) -> AsyncIterator[Dict[str, Any]]:
         deps = self.deps
+        loop = getattr(deps, "loop_deps", None)
+        if loop is not None:
+            loop.plan_confirmed = False
         messages = self.build_messages(history)
         tools_spec = deps.tools.openai_tools_specs()
 

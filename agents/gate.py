@@ -42,6 +42,17 @@ def _new_request_id() -> str:
     return f"perm_{uuid.uuid4().hex[:8]}"
 
 
+def _effective_mode(mode: ExecMode, loop_deps: Any = None) -> ExecMode:
+    """
+    native_react 没有任务图暂停点。plan 档下：本轮尚未确认时对 L1+ 走确认；
+    用户点允许后 `plan_confirmed=True`，后续按 auto_workspace（L4 仍确认）。
+    """
+    if mode is ExecMode.plan and loop_deps is not None and getattr(
+            loop_deps, "plan_confirmed", False):
+        return ExecMode.auto_workspace
+    return mode if isinstance(mode, ExecMode) else ExecMode.auto_workspace
+
+
 def _policy_for(effect: Effect, mode: ExecMode) -> Policy:
     from .state_loop.permissions import MODE_POLICY
 
@@ -58,6 +69,7 @@ async def authorize_tool(
     confirm_handler=None,
     mode: ExecMode = ExecMode.auto_workspace,
     call_id: str = "",
+    loop_deps: Any = None,
 ) -> GateDecision:
     """
     在任意框架执行工具之前做权限判定。
@@ -75,7 +87,14 @@ async def authorize_tool(
             events=tuple(events),
         )
 
-    policy = _policy_for(result.effect, mode)
+    effective = _effective_mode(mode, loop_deps)
+    # ReAct 没有 decompose 暂停：plan 档下首次写盘/命令/外部写入需确认。
+    if (effective is ExecMode.plan
+            and result.effect in (Effect.L1_WRITE, Effect.L3_COMMAND, Effect.L4_MCP_MUTATE)):
+        from .state_loop.permissions import Policy as _P
+        policy = _P.confirm
+    else:
+        policy = _policy_for(result.effect, effective)
     if policy is Policy.auto:
         return GateDecision(allowed=True)
 
@@ -94,9 +113,10 @@ async def authorize_tool(
         arguments=kwargs if isinstance(kwargs, dict) else {},
         effect=result.effect,
     )
+    kind = PermissionKind.plan if effective is ExecMode.plan else PermissionKind.tools
     payload = {
         "request_id": request_id,
-        "kind": str(PermissionKind.tools),
+        "kind": str(kind),
         "calls": [call.one_line()],
         "task": "",
     }
@@ -104,7 +124,7 @@ async def authorize_tool(
     granted = False
     hub = getattr(confirm_handler, "hub", None) if confirm_handler is not None else None
     if hub is not None:
-        hub.register(PermissionKind.tools, (call,), request_id)
+        hub.register(kind, (call,), request_id)
         events.append(ev.make_event(ev.PERMISSION_REQUEST, payload))
         try:
             granted = bool(await hub.wait(request_id))
@@ -117,7 +137,7 @@ async def authorize_tool(
         events.append(ev.make_event(ev.PERMISSION_REQUEST, payload))
         try:
             granted = bool(await confirm_handler(
-                PermissionKind.tools, (call,), request_id))
+                kind, (call,), request_id))
         except Exception as e:  # noqa: BLE001
             events.append(ev.make_event(ev.THOUGHT, {
                 "content": f"确认通道异常，按拒绝处理: {e}",
@@ -130,6 +150,8 @@ async def authorize_tool(
         }))
 
     if granted:
+        if mode is ExecMode.plan and loop_deps is not None:
+            loop_deps.plan_confirmed = True
         return GateDecision(allowed=True, events=tuple(events))
 
     return GateDecision(
@@ -173,7 +195,13 @@ def execute_gated_sync(deps, name: str, arguments: Any) -> str:
     result = classify(name, kwargs, deps.tools, loop_workspace(deps))
     if result.failure is not None:
         return _denied_text(result.failure.message)
-    policy = _policy_for(result.effect, loop_mode(deps))
+    loop = getattr(deps, "loop_deps", None)
+    effective = _effective_mode(loop_mode(deps), loop)
+    if (effective is ExecMode.plan
+            and result.effect in (Effect.L1_WRITE, Effect.L3_COMMAND, Effect.L4_MCP_MUTATE)):
+        policy = Policy.confirm
+    else:
+        policy = _policy_for(result.effect, effective)
     if policy is Policy.auto:
         return deps.tools.execute(name, arguments)
     if policy is Policy.deny:

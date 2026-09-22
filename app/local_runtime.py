@@ -142,11 +142,21 @@ def apply_runtime_to_config(cfg: Dict[str, Any], state: LocalRuntimeState) -> Di
     """
     把运行时项目/能力合并进配置字典（不修改 config.yaml 文件）。
 
+    始终应用：
+    - agent.exec_mode → 工作台四档执行模式（无选中时保持 yaml）
+
     有已保存项目时：
     - workspace_root → 当前激活项目路径
     - local_access.enabled + roots → 全部项目目录
     - system.enabled + allow_actions → capabilities 段
     """
+    caps = state.capabilities or {}
+    mode = str(caps.get("exec_mode") or "").strip()
+    if mode:
+        agent = dict(cfg.get("agent") or {})
+        agent["exec_mode"] = mode
+        cfg["agent"] = agent
+
     active = state.active_project()
     if active is None:
         return cfg

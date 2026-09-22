@@ -42,6 +42,7 @@ class CapabilitiesUpdate(BaseModel):
     local_access: Optional[bool] = None
     system: Optional[bool] = None
     allow_actions: Optional[List[str]] = None
+    exec_mode: Optional[str] = None
 
 
 def _reload_app(request: Request, state: LocalRuntimeState) -> Dict[str, Any]:
@@ -173,5 +174,8 @@ async def update_capabilities(body: CapabilitiesUpdate, request: Request):
         caps["system"] = body.system
     if body.allow_actions is not None:
         caps["allow_actions"] = body.allow_actions
+    if body.exec_mode is not None:
+        from agents.state_loop.state import ExecMode
+        caps["exec_mode"] = str(ExecMode.parse(body.exec_mode))
     state.capabilities = caps
     return await run_in_threadpool(_reload_app, request, state)
