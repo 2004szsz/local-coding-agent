@@ -1,0 +1,19 @@
+# 本仓库可提交的 Git 配置镜像（对应本机 .git/config 中的 remote / branch）。
+# 说明：Git 不允许把 .git/ 目录本身加入版本库；因此把关键配置放在此文件中随代码提交。
+# 新克隆后若需对齐本机配置，可对照本文件检查 remote.origin.url 与 branch.main。
+
+[core]
+	repositoryformatversion = 0
+	filemode = false
+	bare = false
+	logallrefupdates = true
+	symlinks = false
+	ignorecase = true
+
+[remote "origin"]
+	url = https://github.com/2004szsz/local-coding-agent.git
+	fetch = +refs/heads/*:refs/remotes/origin/*
+
+[branch "main"]
+	remote = origin
+	merge = refs/heads/main

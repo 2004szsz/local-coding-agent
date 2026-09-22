@@ -13,4 +13,6 @@ workspaces/demo/
 .vscode/
 .codegraph/
 .playwright-mcp/
-.cursor/
+.cursor/*
+!.cursor/rules/
+!.cursor/rules/**

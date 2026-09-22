@@ -1,0 +1,139 @@
+---
+description: 代码变更须与 Agent/工具/RAG/权限/事件流等核心模块协同，保持架构一致
+alwaysApply: true
+---
+
+# 本地编码智能体 — 模块协同开发规则
+
+凡在本项目中进行**代码修改、功能新增或更新**，必须将改动与下列模块建立关联并协同优化，不得孤立改一处、漏改关联层。
+各个模块间要注意整体链路的协调性机制和整体性以及适配性和准确性
+## 模块地图（变更前先定位影响面）
+
+| 模块 | 路径 | 职责 |
+| ------ | ------ | ------ |
+| 装配入口 | `agents/agent.py` | `build_runtime()` 统一装配工具、RAG、MCP、框架、权限 |
+| Agent 循环 | `agents/base.py`, `agents/native_react.py` | 统一 `astream_run` 协议与 ReAct 循环 |
+| 框架工厂 | `agents/registry.py` | 框架注册与切换；新框架须实现 `BaseAgent` |
+| state_loop | `agents/state_loop/` | 状态机、任务图、验收、回滚、委派 |
+| 权限闸门 | `agents/gate.py`, `agents/state_loop/permissions.py` | 工具副作用分级与审批 |
+| 事件流 | `agents/events.py`, `app/api/routes_chat.py` | 统一 SSE 事件协议 |
+| 工作区文件 | `tools/file_tools.py`, `tools/search.py`, `tools/workspace.py` | 沙箱内读写与搜索 |
+| 本地文件系统 | `tools/fs_tools.py`, `tools/fs_access.py` | 工作区外 `fs_*` 与 `AccessBroker` |
+| RAG | `memory/vector_store.py`, `memory/indexer.py`, `memory/splitter.py` | 索引、切片、向量检索 |
+| Agent 工具 | `tools/base.py`, `tools/rag_tools.py`, `skills/` | `Tool` 契约、注册、技能暴露 |
+| 配置 | `agents/agent.yaml`, `config.yaml` | 框架、技能、RAG、local_access |
+
+架构细节见 `docs/agent-runtime-architecture.md`、`docs/local-system-access-plan.md`。
+
+---
+
+## 变更工作流（每次必做）
+
+### 1. 影响面分析（动手前）
+
+回答以下问题，并在 PR/提交说明中简要记录：
+
+1. 改动触及哪些模块（上表）？
+2. 是否新增/修改工具？是否改变副作用等级（L0–L4）？
+3. 是否影响 SSE 事件形状或前端展示？
+4. 是否影响 `state_loop` 不变量 I1–I4（见架构文档 §0）？
+5. 是否需要同步更新测试（`tests/`）？
+
+### 2. 实施原则
+
+- **最小必要改动**：只改与需求直接相关的层；不借机重构无关代码。
+- **框架无关的工具层**：新工具只依赖 `Tool` / `ToolRegistry`，不得在工具内写框架分支逻辑。
+- **单一装配点**：运行时依赖只在 `agents/agent.py::build_runtime` 注入，不在 HTTP 路由或 Agent 实现里重复装配。
+- **技能驱动暴露**：模型可见工具由 `skills/*.py` 声明 + `agents/agent.yaml` 启用；禁止在 `agent.yaml` 再列一份工具清单。
+- **失败可降级**：RAG、MCP、可选框架、embedding 初始化失败不得阻断主程序启动。
+
+### 3. 完成前检查（动手后）
+
+```bash
+python -m unittest discover -s tests -p "test_*.py"
+```
+
+并确认：相关模块测试已更新；`GET /api/health` 能反映新能力；无孤立死代码。
+
+---
+
+## 分模块强制要求
+
+### Agent 循环与框架工厂
+
+- 新 Agent 框架：在 `agents/registry.py` 注册，实现 `BaseAgent.astream_run`，产出 `agents/events.py` 定义的事件。
+- 修改循环逻辑时，**同时评估** `native_react` 与 `state_loop` 两条路径；共用逻辑抽到 `agents/gate.py` 或 `tools/`，禁止复制粘贴。
+- `state_loop` 遵守四不变量：**控制流归机器、副作用归授权、完成归验证、失败归分类**。
+- 改 `agents/state_loop/machine.py` 转移表时，同步更新 `tests/test_state_loop_machine.py` 及 `docs/agent-runtime-architecture.md`（若行为变更）。
+
+### 权限闸门
+
+- 任何产生副作用的工具（写盘、删改、起进程、系统动作、MCP 写操作）**必须**经 `authorize_tool()` 或 `execute_gated_sync()`，不得绕过。
+- 新工具须在 `agents/state_loop/permissions.py`（或 `classify` 链路）中明确副作用等级与 `ExecMode` 策略映射。
+- L4 / `confirm_writes` 须产出 `permission_request` 事件；超时 = 拒绝（失败关闭）。
+- 工作区外写入走 `fs_*` + `AccessBroker`；工作区内写入走 `file_tools` + `WorkspaceSecurity`。
+
+### 事件流
+
+- 事件类型常量只定义在 `agents/events.py`；禁止在框架内硬编码字符串。
+- 标准事件：`token`, `thought`, `tool_call`, `tool_result`, `done`, `error`, `status`。
+- `state_loop` 增量事件：`plan`, `task`, `verify`, `rollback`, `permission_request` — 新增事件须向后兼容（旧前端可忽略）。
+- `tool_call` / `tool_result` 字段保持统一：`id`, `name`, `arguments` / `output`, `is_error`。
+- 改事件协议时，同步检查 `app/web/app.js` 与 `app/api/routes_chat.py`。
+
+### 本地文件系统操控
+
+- 工作区内路径**必须**经 `WorkspaceSecurity` 校验；工作区外**必须**经 `AccessBroker.resolve()`。
+- 新 `fs_*` 工具：在 `tools/fs_tools.py` 实现，通过 `skills/local_system*.py` 暴露；读写分组与 `config.yaml → local_access` 一致。
+- `fs_delete` 走隔离目录（`trash_dir`），禁止真删；`fs_restore` 须复查目标冲突。
+- 文件/API 路由（`app/api/routes_files.py`）与 Agent 工具行为须一致，错误信息对模型友好。
+
+### RAG 模块
+
+- 检索入口：`tools/rag_tools.py::rag_search`；存储：`memory/vector_store.py`；索引：`memory/indexer.py`；切片：`memory/splitter.py`。
+- 改切片/嵌入/集合逻辑时，评估增量索引（SHA1）与 `POST /api/rag/index` 兼容性。
+- RAG 未就绪时 `rag_search` 须返回明确提示，不得抛未捕获异常。
+- 配置变更同步 `config.yaml → rag` 段；索引范围与工作区 `workspace_root` 一致。
+
+### Agent 工具
+
+- 新工具：`tools/base.py::Tool` + `register_*` 函数 + 对应 `skills/*.py` 声明 + 必要时 `agents/agent.py::_build_tools` 注册。
+- 工具 handler 返回**字符串**（模型可读）；异常转为友好错误，不泄露堆栈。
+- 工具名全局唯一；`openai_tools_specs()` 与 `execute()` 行为一致。
+- MCP 工具经 `tools/mcp/bridge.py` 桥接，共用权限判定，不单独开审批通道。
+
+---
+
+## 配置与文档协同
+
+| 变更类型 | 须同步 |
+| ---------- | -------- |
+| 新工具 / 技能 | `skills/*.py`, `agents/agent.yaml`, 相关测试 |
+| 新框架 | `agents/registry.py`, `requirements.txt`, README |
+| RAG 行为 | `config.yaml`, `app/api/routes_rag.py`, `memory/*` |
+| 本地访问 | `config.yaml → local_access/system`, `docs/local-system-access-plan.md` |
+| state_loop 行为 | `agents/agent.yaml`, `docs/agent-runtime-architecture.md` |
+
+---
+
+## 禁止事项
+
+- 在 Agent 框架内直接读写文件/执行命令（必须走 ToolRegistry）。
+- 新增绕过 `gate.py` 的工具执行路径。
+- 在 `app/api/*` 重复实现 `build_runtime` 已有逻辑。
+- 破坏性变更 SSE 事件字段而不更新前端或不做向后兼容。
+- 把密钥写入 `config.yaml` / `agent.yaml`（密钥只放 `.env`）。
+
+---
+
+## 变更自检清单（提交前勾选）
+
+- [ ] 已列出影响的模块（上表至少一项）
+- [ ] 工具变更已更新技能声明与权限分级
+- [ ] 事件流前后端字段一致
+- [ ] `state_loop` 不变量未被破坏（若触及）
+- [ ] 文件路径经 `WorkspaceSecurity` 或 `AccessBroker` 校验
+- [ ] RAG 相关改动已考虑索引/检索一致性
+- [ ] `python -m unittest discover -s tests -p "test_*.py"` 通过
+- [ ] README 或 `docs/` 已更新（若用户可见行为变更）
+- [ ] 已按 `.cursor/rules/git-auto-push.mdc` 提交并推送到 GitHub（含 `.gitconfig` 若有变更）
