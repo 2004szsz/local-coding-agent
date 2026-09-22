@@ -1,5 +1,5 @@
 /* ============================================================
-   ZCode 智能体工作台 · 前端逻辑（原生 JavaScript，零框架依赖）
+   Craftbase 智能体工作台 · 前端逻辑（原生 JavaScript，零框架依赖）
    模块：视图路由 / API 封装 / SSE 流式对话 / Markdown 渲染 /
         项目与任务 / 模型供应商管理 / 设置中心 / 文件与 RAG
    ============================================================ */
@@ -33,7 +33,7 @@ const state = {
   prefs: { language: "zh", theme: "light", mode: "standard", zoom: "1", accent: "orange", loggedIn: true },
 };
 
-const TASK_META_KEY = "zcode.taskMeta";
+const TASK_META_KEY = "craftbase.taskMeta";
 
 const AGENT_ROLES = {
   fullstack: { zh: "全栈工程师", en: "Full-stack Engineer", letter: "A" },
@@ -49,7 +49,7 @@ const SLASH_COMMANDS = [
   { cmd: "/清空", desc: "清空当前对话", action: "clear-chat" },
 ];
 
-const PREFS_KEY = "zcode.prefs";
+const PREFS_KEY = "craftbase.prefs";
 
 const I18N = {
   zh: {
@@ -62,7 +62,7 @@ const I18N = {
     "ctx.split": "在分屏打开", "ctx.explorer": "在资源管理器中打开", "ctx.copyPath": "复制路径",
     "ctx.copyTaskPath": "复制任务路径", "ctx.copyLogPath": "复制日志路径", "ctx.copySession": "复制会话 ID",
     "ctx.config": "前往配置", "ctx.viewTrace": "查看调用轨迹", "ctx.feedback": "反馈问题",
-    "brand.tagline": "ZCode，我帮你",
+    "brand.tagline": "Craftbase，我帮你",
     "mode.office": "日常办公", "mode.code": "代码开发", "mode.design": "设计创意",
     "chain.fs": "文件", "chain.rag": "知识库", "chain.agent": "循环",
     "chain.ragIdle": "知识库待索引", "chain.ragReady": "知识库已就绪",
@@ -123,7 +123,7 @@ const I18N = {
     "ctx.split": "Open in split", "ctx.explorer": "Open in Explorer", "ctx.copyPath": "Copy path",
     "ctx.copyTaskPath": "Copy task path", "ctx.copyLogPath": "Copy log path", "ctx.copySession": "Copy session ID",
     "ctx.config": "Go to settings", "ctx.viewTrace": "View call trace", "ctx.feedback": "Send feedback",
-    "brand.tagline": "ZCode, at your service",
+    "brand.tagline": "Craftbase, at your service",
     "mode.office": "Office", "mode.code": "Development", "mode.design": "Design",
     "chain.fs": "Files", "chain.rag": "RAG", "chain.agent": "Loop",
     "chain.ragIdle": "Index pending", "chain.ragReady": "Knowledge ready",
@@ -532,7 +532,7 @@ function addAssistantMessage(toolEvents = []) {
   const row = document.createElement("div");
   row.className = "msg-row assistant";
   row.innerHTML = `
-    <span class="msg-avatar">Z</span>
+    <span class="msg-avatar">C</span>
     <div class="assistant-inner">
       <div class="loop-timeline" hidden>
         <div class="loop-timeline-head">
